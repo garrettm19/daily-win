@@ -58,6 +58,36 @@ Household
 - Never send child information to a model provider until the caller is authorized for that household and child.
 - Design for child deletion and account deletion: canonical records, derived profiles, and provider payloads must be removable without leaving child narrative in logs.
 - Do not shortcut this model with `user_id` as the owner of a child.
+- Users and household memberships are not modeled yet. The household is already the tenant boundary; authenticated members will attach later.
+- Child-owned rows carry both `household_id` and `child_id`, with a **composite foreign key** `(child_id, household_id) → children(id, household_id)`. PostgreSQL therefore rejects a row whose child belongs to Household A while `household_id` claims Household B.
+- Row-Level Security is not enabled yet. It will follow authenticated tenant context.
+
+## Domain data model
+
+Packages live under `apps/api/src/daily_win_api/domains/`:
+
+- `households` — tenant
+- `children` — learner identity and parent-reported baselines
+- `learning` — skill taxonomy, goals, evidence ledger, derived skill state
+
+Current tables:
+
+| Table | Role |
+| --- | --- |
+| `households` | Tenant |
+| `children` | Learner belonging to a household |
+| `child_baselines` | Appendable parent-reported snapshots |
+| `skills` | Application-owned taxonomy (`code` is stable) |
+| `child_goals` | Active skill priorities for a child |
+| `learning_events` | Canonical append-only evidence ledger |
+| `learner_skill_state` | Current derived state, rebuildable from events |
+| `learner_skill_state_evidence` | Lineage from derived state to supporting events |
+
+`learning_events.evidence_kind` distinguishes **FACT**, **MEASUREMENT**, **OBSERVATION**, and **INFERENCE**. `source` records who reported it (for example PARENT, SYSTEM, ASSESSMENT, AI). Corrections use `supersedes_event_id` rather than mutating history. `learner_skill_state` is not the ledger and must not be treated as canonical memory.
+
+## Demo API (development only)
+
+`GET /api/v1/demo/child-profile` returns the seeded synthetic child for local Expo development. It is registered only when `APP_ENV` is a development environment (`local`, `development`, `dev`, `test`). It is not tenant authorization and must not exist in production.
 
 ## ModelGateway boundary
 

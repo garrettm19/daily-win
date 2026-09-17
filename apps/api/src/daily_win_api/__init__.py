@@ -1,0 +1,1 @@
+"""Daily Win API package."""

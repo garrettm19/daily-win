@@ -1,0 +1,27 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from daily_win_api.api.router import api_router
+from daily_win_api.core.config import Settings, get_settings
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    resolved = settings or get_settings()
+    application = FastAPI(title="Daily Win API")
+    application.include_router(api_router)
+    if resolved.demo_routes_enabled:
+        from daily_win_api.api.v1.demo import router as demo_router
+
+        application.include_router(demo_router)
+        # Local Expo/LAN access only. This middleware applies to the whole
+        # development app, not solely the demo router.
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_methods=["GET"],
+            allow_headers=["*"],
+        )
+    return application
+
+
+app = create_app()
