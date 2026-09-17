@@ -69,6 +69,7 @@ Packages live under `apps/api/src/daily_win_api/domains/`:
 - `households` — tenant
 - `children` — learner identity and parent-reported baselines
 - `learning` — skill taxonomy, goals, evidence ledger, derived skill state
+- `daily_wins` — generated activities and AI-run provenance
 
 Current tables:
 
@@ -82,12 +83,29 @@ Current tables:
 | `learning_events` | Canonical append-only evidence ledger |
 | `learner_skill_state` | Current derived state, rebuildable from events |
 | `learner_skill_state_evidence` | Lineage from derived state to supporting events |
+| `ai_runs` | Provider call provenance (no raw prompts or child narrative) |
+| `daily_wins` | Immutable generated Daily Win artifacts |
+| `daily_win_feedback` | Immutable parent reflection for one Daily Win |
 
 `learning_events.evidence_kind` distinguishes **FACT**, **MEASUREMENT**, **OBSERVATION**, and **INFERENCE**. `source` records who reported it (for example PARENT, SYSTEM, ASSESSMENT, AI). Corrections use `supersedes_event_id` rather than mutating history. `learner_skill_state` is not the ledger and must not be treated as canonical memory.
+
+Parent feedback is stored as `daily_win_feedback` and converted by application code into canonical `learning_events` (a completion observation plus a primary-skill observation). `learner_skill_state` is rebuilt by a deterministic projector (`trend_projector_v1` for persistence). Adaptation policy is application-owned (`AdaptationDirective`) and is supplied to generation through the Context Builder. The current generator prompt is `daily_win_generator_v3`; historical prompt versions remain frozen in source.
+
+`learning_events` may carry nullable `daily_win_id` and `daily_win_feedback_id` for lineage. `daily_win_feedback` is owned by the same household, child, and Daily Win through a composite foreign key, and V0.1 allows one submission per Daily Win.
 
 ## Demo API (development only)
 
 `GET /api/v1/demo/child-profile` returns the seeded synthetic child for local Expo development. It is registered only when `APP_ENV` is a development environment (`local`, `development`, `dev`, `test`). It is not tenant authorization and must not exist in production.
+
+`POST /api/v1/demo/daily-wins/generate`, `GET /api/v1/demo/daily-wins/latest`, `POST /api/v1/demo/daily-wins/{daily_win_id}/feedback`, and `POST /api/v1/demo/reset` follow the same restriction. Generation goes through ModelGateway; the mobile app never holds a provider key. If the latest Daily Win has no reflection, generate refuses with `feedback_required`.
+
+`POST /api/v1/demo/reset` restores the synthetic Hayes child to the seeded starting condition. It deletes demo-derived `daily_win_feedback`, `learner_skill_state_evidence`, `learner_skill_state`, `learning_events`, `daily_wins`, and `ai_runs` for that child only. It does not delete the demo household, Hayes, baseline, goals, or the skill taxonomy, and it does not touch other households. Local command: `uv --directory apps/api run python -m daily_win_api.dev.reset`.
+
+## Daily Win generation
+
+A Context Builder loads a bounded snapshot: nickname, latest parent-reported baseline, active goals, related `learner_skill_state` rows, at most 10 recent `learning_events`, at most 3 recent Daily Wins, and a structured `AdaptationDirective`. Event summaries sent to the model are concise parent observations, not raw database rows. Database IDs stay in an internal `ai_runs.context_manifest` and are not sent to the model.
+
+`ModelGateway` is the only provider boundary. The OpenAI implementation uses the Responses API with Structured Outputs and `store=False`. Application code validates skill codes against the taxonomy, requires the primary skill to match the #1 active goal, and runs deterministic physical-safety checks before persisting a `daily_wins` row. Failed generations record a sanitized `ai_runs` status and do not persist a Daily Win.
 
 ## ModelGateway boundary
 

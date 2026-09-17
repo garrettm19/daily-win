@@ -20,6 +20,8 @@ def append_learning_event(session: Session, data: LearningEventCreate) -> Learni
         schema_version=data.schema_version,
         confidence=data.confidence,
         supersedes_event_id=data.supersedes_event_id,
+        daily_win_id=data.daily_win_id,
+        daily_win_feedback_id=data.daily_win_feedback_id,
     )
     session.add(event)
     session.flush()

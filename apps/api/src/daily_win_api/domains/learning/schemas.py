@@ -48,6 +48,8 @@ class LearningEventRead(BaseModel):
     schema_version: int
     confidence: float | None
     supersedes_event_id: UUID | None
+    daily_win_id: UUID | None
+    daily_win_feedback_id: UUID | None
     created_at: datetime
 
 
@@ -63,6 +65,8 @@ class LearningEventCreate(BaseModel):
     schema_version: int = 1
     confidence: float | None = Field(default=None, ge=0, le=1)
     supersedes_event_id: UUID | None = None
+    daily_win_id: UUID | None = None
+    daily_win_feedback_id: UUID | None = None
 
 
 class LearnerSkillStateRead(BaseModel):

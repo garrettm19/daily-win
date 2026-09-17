@@ -5,6 +5,7 @@ from daily_win_api.core.demo import (
     DEMO_CHILD_NICKNAME,
     DEMO_HOUSEHOLD_ID,
 )
+from daily_win_api.dev.reset import reset_demo_derived_data
 from daily_win_api.dev.seed import HAYES_GOAL_CODES, seed_development_data
 from daily_win_api.domains.children.models import Child, ChildBaseline
 from daily_win_api.domains.households.models import Household
@@ -14,6 +15,8 @@ from daily_win_api.domains.learning.taxonomy import SKILL_DEFINITIONS
 
 def test_demo_seed_is_idempotent(db_session) -> None:
     seed_development_data(db_session)
+    seed_development_data(db_session)
+    reset_demo_derived_data(db_session)
     seed_development_data(db_session)
 
     skill_count = db_session.scalar(select(func.count()).select_from(Skill))

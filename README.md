@@ -37,13 +37,21 @@ Run the API so a physical phone on the same Wi-Fi can reach it:
 uv --directory apps/api run uvicorn daily_win_api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Copy `apps/api/.env.example` to `apps/api/.env` only if you need to override the local defaults.
+Copy `apps/api/.env.example` to `apps/api/.env` only if you need to override the local defaults. Set `OPENAI_API_KEY` there for real Daily Win generation. The mobile app never receives this key.
 
 Seed the synthetic demo household/child (safe to run more than once):
 
 ```powershell
 uv --directory apps/api run python -m daily_win_api.dev
 ```
+
+Reset the synthetic demo back to that seeded starting condition (removes generated Daily Wins, reflections, evidence, and derived learner state for Hayes only):
+
+```powershell
+uv --directory apps/api run python -m daily_win_api.dev.reset
+```
+
+The same reset is also available as development-only `POST /api/v1/demo/reset`. It is not registered in production.
 
 For Expo Go on a physical phone, copy `apps/mobile/.env.example` to `apps/mobile/.env.local` and set `EXPO_PUBLIC_API_URL` to this computer's LAN IPv4, for example `http://192.168.x.x:8000`. Do not commit `.env.local`. Restart Expo after changing it.
 

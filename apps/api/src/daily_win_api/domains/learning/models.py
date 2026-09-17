@@ -105,6 +105,18 @@ class LearningEvent(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         nullable=True,
         index=True,
     )
+    daily_win_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("daily_wins.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    daily_win_feedback_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("daily_win_feedback.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
 
 class LearnerSkillState(UUIDPrimaryKeyMixin, TimestampMixin, Base):

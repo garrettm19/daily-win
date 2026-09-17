@@ -1,19 +1,94 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 
-import { useDemoChildProfile } from '@/hooks/useDemoChildProfile';
-import type { DemoChildProfile, DemoGoalSummary } from '@/lib/api/types';
+import { useHomeData } from '@/hooks/useHomeData';
+import { ApiError } from '@/lib/api/client';
+import { generateDemoDailyWin } from '@/lib/api/demo';
+import { homeWinPhase } from '@/lib/homeState';
+import type {
+  DemoChildProfile,
+  DemoDailyWin,
+  DemoGoalSummary,
+} from '@/lib/api/types';
 
 export default function Index() {
-  const { profile, error, loading, retry } = useDemoChildProfile();
+  const { profile, dailyWin, error, loading, retry, rememberDailyWin } =
+    useHomeData();
+  const router = useRouter();
+  const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [generateErrorCode, setGenerateErrorCode] = useState<string | null>(null);
+  const generateLock = useRef(false);
+
+  const handleGenerate = () => {
+    if (generateLock.current || generating) {
+      return;
+    }
+    generateLock.current = true;
+    setGenerating(true);
+    setGenerateError(null);
+    setGenerateErrorCode(null);
+    void generateDemoDailyWin()
+      .then((created) => {
+        rememberDailyWin(created);
+        router.push('/daily-win');
+      })
+      .catch((caught: unknown) => {
+        generateLock.current = false;
+        if (caught instanceof ApiError) {
+          setGenerateError(caught.message);
+          setGenerateErrorCode(caught.errorCode ?? null);
+          return;
+        }
+        setGenerateError(
+          caught instanceof Error
+            ? caught.message
+            : 'Daily Win could not be created. Please try again.',
+        );
+        setGenerateErrorCode(null);
+      })
+      .finally(() => {
+        setGenerating(false);
+      });
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {loading ? <LoadingState /> : null}
-      {!loading && error ? <ErrorState message={error} onRetry={retry} /> : null}
-      {!loading && profile ? <ProfileHome profile={profile} /> : null}
+      {generating && profile ? (
+        <GeneratingState nickname={profile.child.nickname} />
+      ) : null}
+      {!generating && loading ? <LoadingState /> : null}
+      {!generating && !loading && error ? (
+        <ErrorState message={error} onRetry={retry} />
+      ) : null}
+      {!generating && !loading && profile ? (
+        <ProfileHome
+          profile={profile}
+          dailyWin={dailyWin}
+          generateError={generateError}
+          generateErrorCode={generateErrorCode}
+          onGenerate={handleGenerate}
+          onView={() => {
+            router.push('/daily-win');
+          }}
+        />
+      ) : null}
     </SafeAreaView>
+  );
+}
+
+function GeneratingState({ nickname }: { nickname: string }) {
+  return (
+    <View style={styles.centered}>
+      <Text style={styles.brand}>Daily Win</Text>
+      <Text style={styles.statusTitle}>{`Designing ${nickname}'s Daily Win…`}</Text>
+      <Text style={styles.statusBody}>
+        Creating one short activity for you to do together, then continue
+        offline.
+      </Text>
+    </View>
   );
 }
 
@@ -52,7 +127,21 @@ function ErrorState({
   );
 }
 
-function ProfileHome({ profile }: { profile: DemoChildProfile }) {
+function ProfileHome({
+  profile,
+  dailyWin,
+  generateError,
+  generateErrorCode,
+  onGenerate,
+  onView,
+}: {
+  profile: DemoChildProfile;
+  dailyWin: DemoDailyWin | null;
+  generateError: string | null;
+  generateErrorCode: string | null;
+  onGenerate: () => void;
+  onView: () => void;
+}) {
   const focusGoal = profile.goals[0];
 
   return (
@@ -100,13 +189,127 @@ function ProfileHome({ profile }: { profile: DemoChildProfile }) {
 
       <View style={styles.comingCard}>
         <Text style={styles.comingEyebrow}>{"Today's Daily Win"}</Text>
-        <Text style={styles.comingTitle}>Generation is coming next.</Text>
-        <Text style={styles.comingBody}>
-          You will get a short activity and a parent briefing designed to do
-          together, then continue offline.
-        </Text>
+        <HomeWinCard
+          profile={profile}
+          dailyWin={dailyWin}
+          generateError={generateError}
+          generateErrorCode={generateErrorCode}
+          onGenerate={onGenerate}
+          onView={onView}
+        />
       </View>
     </ScrollView>
+  );
+}
+
+function HomeWinCard({
+  profile,
+  dailyWin,
+  generateError,
+  generateErrorCode,
+  onGenerate,
+  onView,
+}: {
+  profile: DemoChildProfile;
+  dailyWin: DemoDailyWin | null;
+  generateError: string | null;
+  generateErrorCode: string | null;
+  onGenerate: () => void;
+  onView: () => void;
+}) {
+  const phase = homeWinPhase(dailyWin);
+
+  if (phase === 'none') {
+    return (
+      <>
+        <Text style={styles.comingTitle}>One short activity to do together.</Text>
+        <Text style={styles.comingBody}>
+          Designed from the parent-reported baseline and current goals.
+        </Text>
+        <GenerateError
+          message={generateError}
+          errorCode={generateErrorCode}
+        />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Generate today's Daily Win"
+          onPress={onGenerate}
+          style={({ pressed }) => [styles.ctaButton, pressed && styles.pressed]}>
+          <Text style={styles.ctaLabel}>{"Generate today's Daily Win"}</Text>
+        </Pressable>
+      </>
+    );
+  }
+
+  if (dailyWin === null) {
+    return null;
+  }
+
+  if (phase === 'reflection_pending') {
+    return (
+      <>
+        <Text style={styles.comingTitle}>{dailyWin.title}</Text>
+        <Text style={styles.comingBody}>
+          Focus: {dailyWin.primary_skill_display_name} · About{' '}
+          {dailyWin.duration_minutes} minutes
+        </Text>
+        <Text style={styles.pendingNote}>Reflection pending</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="View Daily Win"
+          onPress={onView}
+          style={({ pressed }) => [styles.ctaButton, pressed && styles.pressed]}>
+          <Text style={styles.ctaLabel}>View Daily Win</Text>
+        </Pressable>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Text style={styles.comingTitle}>{dailyWin.title}</Text>
+      <Text style={styles.comingBody}>
+        Focus: {dailyWin.primary_skill_display_name} · About{' '}
+        {dailyWin.duration_minutes} minutes
+      </Text>
+      <GenerateError message={generateError} errorCode={generateErrorCode} />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="View completed Daily Win"
+        onPress={onView}
+        style={({ pressed }) => [styles.ctaButton, pressed && styles.pressed]}>
+        <Text style={styles.ctaLabel}>View completed Win</Text>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Generate ${profile.child.nickname}'s next Daily Win`}
+        onPress={onGenerate}
+        style={({ pressed }) => [styles.ctaButton, pressed && styles.pressed]}>
+        <Text style={styles.ctaLabel}>
+          {`Generate ${profile.child.nickname}'s next Daily Win`}
+        </Text>
+      </Pressable>
+    </>
+  );
+}
+
+function GenerateError({
+  message,
+  errorCode,
+}: {
+  message: string | null;
+  errorCode: string | null;
+}) {
+  if (!message) {
+    return null;
+  }
+  return (
+    <>
+      <Text style={styles.generateError}>{message}</Text>
+      {errorCode ? (
+        <Text style={styles.devError}>{`Dev error: ${errorCode}`}</Text>
+      ) : null}
+    </>
   );
 }
 
@@ -347,5 +550,36 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     color: '#6F6A64',
+  },
+  generateError: {
+    marginTop: 12,
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#8A3A2A',
+  },
+  pendingNote: {
+    marginTop: 12,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#8A5A2A',
+  },
+  devError: {
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#8A7E74',
+  },
+  ctaButton: {
+    alignSelf: 'flex-start',
+    marginTop: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+    backgroundColor: '#2C4A3E',
+  },
+  ctaLabel: {
+    color: '#F8F6F1',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
