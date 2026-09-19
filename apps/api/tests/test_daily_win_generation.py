@@ -16,6 +16,7 @@ from daily_win_api.domains.daily_wins.schemas import (
 )
 from daily_win_api.domains.daily_wins.service import generate_demo_daily_win
 from daily_win_api.main import create_app
+from tests.demo_client import DemoClient
 
 
 def _development_app(db_session, gateway=None):
@@ -50,7 +51,7 @@ def test_valid_fake_daily_win_is_persisted(demo_db) -> None:
     gateway = FakeModelGateway()
     result = generate_demo_daily_win(demo_db, gateway)
 
-    assert result.content.primary_skill_code == "growth.persistence"
+    assert result.content.primary_skill_code == "writing.sentences.complete_sentence"
     assert result.has_feedback is False
     assert result.content.adaptation_summary is None
     assert len(_ids(demo_db, DailyWin) - win_ids) == 1
@@ -64,32 +65,36 @@ def test_valid_fake_daily_win_is_persisted(demo_db) -> None:
     assert run.latency_ms == 5
     assert run.provider_request_id == "fake-request"
     assert run.error_code is None
-    assert run.prompt_version == "daily_win_generator_v3"
+    assert run.prompt_version == "daily_win_generator_v5"
 
 
 def test_primary_skill_mismatch_is_rejected(demo_db) -> None:
     win_ids = _ids(demo_db, DailyWin)
     run_ids = _ids(demo_db, AiRun)
     gateway = FakeModelGateway(
-        draft=valid_daily_win_draft(primary_skill_code="writing.organization")
+        draft=valid_daily_win_draft(
+            primary_skill_code="growth.persistence"
+        ),
+        align_to_plan=False,
     )
     try:
         generate_demo_daily_win(demo_db, gateway)
         raise AssertionError("expected rejection")
     except Exception as exc:
-        assert getattr(exc, "code", None) == "primary_goal_mismatch"
+        assert getattr(exc, "code", None) == "instruction_plan_mismatch"
 
     assert _ids(demo_db, DailyWin) == win_ids
     run = _new_row(demo_db, AiRun, run_ids)
     assert run.status == AI_RUN_STATUS_REJECTED
-    assert run.error_code == "primary_goal_mismatch"
+    assert run.error_code == "instruction_plan_mismatch"
 
 
 def test_unknown_skill_code_is_rejected(demo_db) -> None:
     win_ids = _ids(demo_db, DailyWin)
     run_ids = _ids(demo_db, AiRun)
     gateway = FakeModelGateway(
-        draft=valid_daily_win_draft(primary_skill_code="invented.skill")
+        draft=valid_daily_win_draft(primary_skill_code="invented.skill"),
+        align_to_plan=False,
     )
     try:
         generate_demo_daily_win(demo_db, gateway)
@@ -167,17 +172,21 @@ def test_demo_daily_win_endpoints_absent_in_production() -> None:
     client = TestClient(application)
     assert client.post("/api/v1/demo/daily-wins/generate").status_code == 404
     assert client.get("/api/v1/demo/daily-wins/latest").status_code == 404
-    assert client.post(
-        "/api/v1/demo/daily-wins/00000000-0000-0000-0000-000000000000/feedback",
-        json=_feedback_payload(),
-    ).status_code == 404
+    assert (
+        client.post(
+            "/api/v1/demo/daily-wins/00000000-0000-0000-0000-000000000000/feedback",
+            json=_feedback_payload(),
+        ).status_code
+        == 404
+    )
     assert client.post("/api/v1/demo/reset").status_code == 404
 
 
 def test_get_latest_returns_persisted_daily_win(demo_db) -> None:
     gateway = FakeModelGateway()
     application = _development_app(demo_db, gateway)
-    client = TestClient(application)
+    client = DemoClient(application)
+    client.setup_hayes()
 
     generated = client.post("/api/v1/demo/daily-wins/generate")
     assert generated.status_code == 200
@@ -185,7 +194,7 @@ def test_get_latest_returns_persisted_daily_win(demo_db) -> None:
     assert latest.status_code == 200
     body = latest.json()
     assert body["id"] == generated.json()["id"]
-    assert body["primary_skill_code"] == "growth.persistence"
+    assert body["primary_skill_code"] == "writing.sentences.complete_sentence"
     assert body["has_feedback"] is False
     assert "household_id" not in body
     assert "ai_run_id" not in body
@@ -197,7 +206,8 @@ def test_development_failure_includes_sanitized_error_code(demo_db) -> None:
     run_ids = _ids(demo_db, AiRun)
     gateway = FakeModelGateway(error=ModelGatewayError("insufficient_quota"))
     application = _development_app(demo_db, gateway)
-    client = TestClient(application)
+    client = DemoClient(application)
+    client.setup_hayes()
 
     response = client.post("/api/v1/demo/daily-wins/generate")
 
@@ -230,7 +240,10 @@ def test_production_failure_omits_error_code() -> None:
     @application.get("/_test/generation-error")
     def raise_generation_error():
         raise SanitizedClientError(
-            502, CLIENT_GENERATION_FAILED, "insufficient_quota"
+            502,
+            CLIENT_GENERATION_FAILED,
+            "insufficient_quota",
+            dev_reason="sharp_object",
         )
 
     client = TestClient(application)
@@ -244,6 +257,8 @@ def test_production_failure_omits_error_code() -> None:
     assert body == {"detail": CLIENT_GENERATION_FAILED}
     assert "error_code" not in body
     assert "insufficient_quota" not in response.text
+    assert "dev_reason" not in body
+    assert "sharp_object" not in response.text
 
 
 def test_unsafe_http_failure_includes_error_code_without_raw_steps(demo_db) -> None:
@@ -254,7 +269,8 @@ def test_unsafe_http_failure_includes_error_code_without_raw_steps(demo_db) -> N
         )
     )
     application = _development_app(demo_db, gateway)
-    client = TestClient(application)
+    client = DemoClient(application)
+    client.setup_hayes()
 
     response = client.post("/api/v1/demo/daily-wins/generate")
 
@@ -262,6 +278,7 @@ def test_unsafe_http_failure_includes_error_code_without_raw_steps(demo_db) -> N
     body = response.json()
     assert body["detail"] == "Daily Win could not be created. Please try again."
     assert body["error_code"] == "unsafe_content"
+    assert body["dev_reason"] == "sharp_object"
     assert "scissors" not in response.text
     assert "cardboard" not in response.text
 

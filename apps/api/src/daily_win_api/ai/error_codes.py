@@ -10,13 +10,23 @@ SANITIZED_ERROR_CODES = frozenset(
         "provider_server_error",
         "provider_error",
         "unsafe_content",
+        "harmful_content",
         "schema_validation_failed",
         "configuration_error",
         "unknown_skill",
         "primary_goal_mismatch",
+        "instruction_plan_mismatch",
+        "renderer_contract_failed",
+        "verification_failed",
+        "verification_uncertain",
+        "retries_exhausted",
         "demo_unavailable",
         "feedback_required",
         "already_submitted",
+        "setup_required",
+        "already_configured",
+        "academic_result_not_applicable",
+        "invalid_academic_counts",
     }
 )
 

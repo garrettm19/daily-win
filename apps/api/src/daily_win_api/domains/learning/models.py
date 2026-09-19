@@ -33,6 +33,29 @@ class Skill(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     state_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    skill_kind: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="strand", server_default=text("'strand'")
+    )
+    strand: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    parent_code: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    grade_band_min: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=5, server_default=text("5")
+    )
+    grade_band_max: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=9, server_default=text("9")
+    )
+    measurable_outcome: Mapped[str | None] = mapped_column(Text, nullable=True)
+    progression_position: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    taxonomy_version: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="curriculum_v1",
+        server_default=text("'curriculum_v1'"),
+    )
     active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )
@@ -75,6 +98,13 @@ class LearningEvent(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
             "ix_learning_events_occurred_at",
             "household_id",
             "child_id",
+            "occurred_at",
+        ),
+        Index(
+            "ix_learning_events_child_skill_occurred",
+            "household_id",
+            "child_id",
+            "skill_id",
             "occurred_at",
         ),
     )
@@ -164,5 +194,106 @@ class LearnerSkillStateEvidence(CreatedAtMixin, Base):
         Uuid(as_uuid=True),
         ForeignKey("learning_events.id", ondelete="RESTRICT"),
         primary_key=True,
+        index=True,
+    )
+
+
+class SkillPrerequisite(CreatedAtMixin, Base):
+    __tablename__ = "skill_prerequisites"
+
+    skill_code: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("skills.code", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    prerequisite_code: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("skills.code", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+
+class SkillStandardRef(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "skill_standard_refs"
+    __table_args__ = (
+        UniqueConstraint(
+            "skill_code",
+            "standard_code",
+            "source",
+            "version",
+            name="uq_skill_standard_refs",
+        ),
+    )
+
+    skill_code: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("skills.code", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    standard_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False)
+    version: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class InstructionPlanRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "instruction_plans"
+    __table_args__ = (
+        child_household_foreign_key("fk_instruction_plans_child_household"),
+        household_child_index("ix_instruction_plans_household_child"),
+        Index(
+            "ix_instruction_plans_household_child_created",
+            "household_id",
+            "child_id",
+            "created_at",
+        ),
+    )
+
+    household_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    child_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    primary_skill_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("skills.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    policy_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    instruction_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    scaffold_level: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason_codes: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    plan: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+
+
+class DecisionRun(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "decision_runs"
+    __table_args__ = (
+        child_household_foreign_key("fk_decision_runs_child_household"),
+        household_child_index("ix_decision_runs_household_child"),
+        Index(
+            "ix_decision_runs_household_child_created",
+            "household_id",
+            "child_id",
+            "created_at",
+        ),
+    )
+
+    household_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    child_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    operation: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    model: Mapped[str] = mapped_column(String(80), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    output: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    instruction_plan_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("instruction_plans.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    daily_win_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("daily_wins.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
     )

@@ -6,7 +6,7 @@ It is not a child chatbot, an AI tutor that replaces the parent, or a product wh
 
 Initial focus: parents and guardians of elementary-age children (approximately ages 5–9).
 
-See [docs/product.md](docs/product.md) for vision, loop, and non-goals, and [docs/architecture.md](docs/architecture.md) for invariants, memory, tenancy, and the ModelGateway boundary. Agent operating rules live in [AGENTS.md](AGENTS.md).
+See [docs/product.md](docs/product.md) for vision, loop, and non-goals, and [docs/architecture.md](docs/architecture.md) for invariants, memory, tenancy, and the ModelGateway boundary. Security and data-handling notes live in [docs/security.md](docs/security.md) and [docs/data-lifecycle.md](docs/data-lifecycle.md). Model-evaluation rules live in [docs/model-evaluation.md](docs/model-evaluation.md). Agent operating rules live in [AGENTS.md](AGENTS.md).
 
 ## Repository
 
@@ -45,17 +45,36 @@ Seed the synthetic demo household/child (safe to run more than once):
 uv --directory apps/api run python -m daily_win_api.dev
 ```
 
-Reset the synthetic demo back to that seeded starting condition (removes generated Daily Wins, reflections, evidence, and derived learner state for Hayes only):
+Reset **this installation's** demo activity history (Daily Wins, reflections, evidence, learner state) while keeping the synthetic profile. `POST /api/v1/demo/reset/session` returns that tester to first-run. Other testers' sessions are not affected. The CLI below wipes every HTTP demo session back to first-run and restores the legacy in-process Hayes row:
 
 ```powershell
 uv --directory apps/api run python -m daily_win_api.dev.reset
 ```
 
-The same reset is also available as development-only `POST /api/v1/demo/reset`. It is not registered in production.
+The same per-session tools are available from the Expo app under **Demo controls** (development builds only): **Reset activity history** and **Restart demo from beginning**. A short tester fingerprint (for example `Tester: A31F92`) confirms two phones are not sharing a session. Demo routes are not registered in production. This is not authentication.
 
-For Expo Go on a physical phone, copy `apps/mobile/.env.example` to `apps/mobile/.env.local` and set `EXPO_PUBLIC_API_URL` to this computer's LAN IPv4, for example `http://192.168.x.x:8000`. Do not commit `.env.local`. Restart Expo after changing it.
+**REAL CHILD PERSONAL INFORMATION MUST NOT BE USED IN THE CURRENT PUBLIC-TUNNEL DEMO ENVIRONMENT.** Synthetic/demo data only.
 
-Run the mobile app:
+Default model is `gpt-5.6-terra`. Do not run a large live model evaluation unless you intend to spend API budget. Small fake sample:
+
+```powershell
+uv --directory apps/api run python -m daily_win_api.eval --sample 2
+```
+
+Copy `apps/mobile/.env.example` to `apps/mobile/.env.local` and set `EXPO_PUBLIC_API_URL` to the API the phone can reach (LAN IPv4 such as `http://192.168.x.x:8000`, or the current development tunnel). Do not commit `.env.local`. Restart Metro after changing it.
+
+Physical iOS development uses an Expo SDK 57 **development build**, not App Store Expo Go. Windows cannot compile iOS locally; Mason needs an Expo account, EAS CLI, Apple Developer Program membership, the iPhone registered on the team, and iOS Developer Mode. From `apps/mobile`:
+
+```powershell
+npx eas-cli login
+npx eas-cli init
+npx eas-cli build --platform ios --profile development
+npx expo start --dev-client
+```
+
+See [apps/mobile/README.md](apps/mobile/README.md) for the full device-install flow. Do not use Expo Go. App Store / TestFlight submission is not configured.
+
+Run Metro for an already-installed development client:
 
 ```powershell
 npm --prefix apps/mobile start

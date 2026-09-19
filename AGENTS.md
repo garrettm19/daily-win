@@ -37,19 +37,20 @@ Prove one thing exceptionally clearly: **parent feedback changes the system's un
 5. **Ownership is Household → Household Members → Children.** Do not model a child as belonging directly to one user.
 6. **Tenant authorization must happen before** child information is sent to an AI provider.
 7. The **mobile app never calls an LLM provider directly** and never contains model-provider API keys.
-8. All model-provider access goes through a backend **ModelGateway** abstraction.
+8. All generative model-provider access goes through a backend **ModelGateway** abstraction. Optional typed judgments go through **DecisionGateway** and are never learner truth. Do not require Jev, TypeSafe, or LangChain.
 9. AI output uses **defined structured schemas** and is **validated by application code**.
 10. **Authorization, security, and physical-activity safety** are application responsibilities, not prompt instructions.
 11. **Child narrative/profile content must not appear** in standard logs or analytics.
 12. Preserve support for: multiple caregivers, child/account deletion, auditability, prompt/model versioning, learner-state reconstruction, and future provider replacement.
 13. **Do not introduce unnecessary infrastructure** (Kubernetes, Kafka, Redis, vector databases, microservices) unless a demonstrated future requirement justifies them.
+14. **The LLM creates the experience. Daily Win decides the learning.** InstructionPlanner owns the instructional objective. Prompt files v1–v4 stay immutable; current renderer is v5.
 
 ## Approved technology
 
 | Layer | Stack |
 | --- | --- |
 | Development | Windows, Cursor Agent, Git/GitHub |
-| Mobile | Expo, React Native, TypeScript, Expo Router, Node 24 LTS, npm |
+| Mobile | Expo SDK 57 development build (not App Store Expo Go), React Native, TypeScript, Expo Router, Node 24 LTS, npm |
 | Backend | FastAPI, Python 3.12, uv, SQLAlchemy, Alembic, Pydantic |
 | Database | PostgreSQL (Docker Compose locally) |
 | Architecture | Modular monolith |
@@ -58,8 +59,8 @@ Prove one thing exceptionally clearly: **parent feedback changes the system's un
 
 ```
 daily-win/
-  apps/mobile/    # Expo app (not yet scaffolded)
-  apps/api/       # FastAPI service (not yet scaffolded)
+  apps/mobile/    # Expo SDK 57 development build
+  apps/api/       # FastAPI / Python 3.12 / uv / SQLAlchemy / Alembic / Pydantic
   docs/           # Product and architecture documentation
   infra/          # Local infrastructure (e.g. Docker Compose)
   scripts/        # Maintainer scripts

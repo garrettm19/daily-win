@@ -14,9 +14,7 @@ _OBSERVATION = {
     PersistenceSignal.DISENGAGED_AFTER_SETBACK: (
         "{nickname} stopped or avoided after a setback."
     ),
-    PersistenceSignal.NO_SIGNAL: (
-        "No setback occurred during this Daily Win."
-    ),
+    PersistenceSignal.NO_SIGNAL: ("No setback occurred during this Daily Win."),
 }
 
 _NEXT = {

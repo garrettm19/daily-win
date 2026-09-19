@@ -22,6 +22,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             detail=exc.detail,
             error_code=exc.error_code,
             include_error_code=resolved.demo_routes_enabled,
+            dev_reason=exc.dev_reason if resolved.demo_routes_enabled else None,
         )
 
     if resolved.demo_routes_enabled:
@@ -33,7 +34,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         application.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],
-            allow_methods=["GET", "POST"],
+            allow_methods=["GET", "POST", "PATCH"],
             allow_headers=["*"],
         )
     return application

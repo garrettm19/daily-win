@@ -5,6 +5,7 @@ from daily_win_api.core.demo import (
     DEMO_CHILD_NICKNAME,
     DEMO_HOUSEHOLD_ID,
 )
+from daily_win_api.dev.presets import HAYES_PROFILE
 from daily_win_api.dev.reset import reset_demo_derived_data
 from daily_win_api.dev.seed import HAYES_GOAL_CODES, seed_development_data
 from daily_win_api.domains.children.models import Child, ChildBaseline
@@ -39,12 +40,18 @@ def test_demo_seed_is_idempotent(db_session) -> None:
     assert child.household_id == DEMO_HOUSEHOLD_ID
     assert child.nickname == DEMO_CHILD_NICKNAME
 
-    baselines = db_session.scalars(
-        select(ChildBaseline).where(ChildBaseline.child_id == DEMO_CHILD_ID)
-    ).all()
-    assert len(baselines) == 1
-    assert baselines[0].age_years == 7
-    assert baselines[0].grade == "1"
+    latest = db_session.scalars(
+        select(ChildBaseline)
+        .where(ChildBaseline.child_id == DEMO_CHILD_ID)
+        .order_by(ChildBaseline.recorded_at.desc())
+        .limit(1)
+    ).first()
+    assert latest is not None
+    assert latest.age_years == HAYES_PROFILE.age_years
+    assert latest.grade == HAYES_PROFILE.grade
+    assert list(latest.interests) == list(HAYES_PROFILE.interests)
+    assert "caregiver" in " ".join(latest.motivators)
+    assert "Dad" not in " ".join(latest.motivators)
 
     goals = db_session.scalars(
         select(ChildGoal)

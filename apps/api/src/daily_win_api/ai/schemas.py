@@ -125,6 +125,35 @@ class PriorDailyWinContext(BaseModel):
     objective: str
 
 
+class InstructionPlanContext(BaseModel):
+    """Authoritative instructional decision. Renderer must not change these."""
+
+    primary_skill_code: str
+    supporting_skill_code: str | None = None
+    selection_reason_codes: list[str]
+    instruction_mode: str
+    intended_difficulty: str
+    scaffold_level: str
+    prerequisite_rationale: str
+    assessment_objective: str
+    assessment_probe: dict[str, object]
+    desired_evidence: str
+    growth_target_code: str | None = None
+    growth_adaptation_summary: str | None = None
+    duration_minutes: int = Field(ge=10, le=25)
+    engagement_theme_constraints: list[str] = Field(default_factory=list, max_length=3)
+    recent_themes_to_avoid: list[str] = Field(default_factory=list, max_length=3)
+    policy_version: str
+    academic_band: str | None = None
+    renderer_contracts: list[str] = Field(default_factory=list, max_length=12)
+
+
+class EvidenceSummaryContext(BaseModel):
+    skill_code: str
+    summary: str
+    reporting_kind: str
+
+
 class AdaptationDirective(BaseModel):
     """Application-owned coaching policy sent to the model. Not a diagnosis."""
 
@@ -150,16 +179,15 @@ class ParentReportedBaselineContext(BaseModel):
 
 
 class DailyWinModelContext(BaseModel):
-    """Bounded context sent to the model. Contains no database identifiers."""
+    """Bounded renderer context. Contains no database identifiers."""
 
     nickname: str
     parent_reported_baseline: ParentReportedBaselineContext
-    active_goals: list[GoalContext]
-    primary_goal_skill_code: str
-    learner_skill_states: list[SkillStateContext]
-    recent_learning_events: list[LearningEventContext]
-    recent_daily_wins: list[PriorDailyWinContext]
-    adaptation_directive: AdaptationDirective | None = None
+    instruction_plan: InstructionPlanContext
+    bounded_evidence_summaries: list[EvidenceSummaryContext] = Field(
+        default_factory=list, max_length=6
+    )
+    recent_themes: list[str] = Field(default_factory=list, max_length=3)
     allowed_skill_codes: list[str]
     allowed_materials: list[str]
 
@@ -174,6 +202,7 @@ class ContextManifest(BaseModel):
     skill_state_ids: list[UUID] = Field(default_factory=list)
     learning_event_ids: list[UUID] = Field(default_factory=list)
     prior_daily_win_ids: list[UUID] = Field(default_factory=list)
+    instruction_plan_id: UUID | None = None
     prompt_version: str
     input_schema_version: str
     output_schema_version: str

@@ -9,20 +9,22 @@ from daily_win_api.dev.seed import seed_development_data
 from daily_win_api.domains.daily_wins.context import build_daily_win_context
 from daily_win_api.domains.daily_wins.models import AiRun, DailyWin
 from daily_win_api.domains.daily_wins.schemas import (
+    BOUNDED_EVIDENCE_CAP,
     CONTENT_SCHEMA_VERSION,
     DAILY_WIN_STATUS_READY,
     INPUT_SCHEMA_VERSION,
     OPERATION_DAILY_WIN_GENERATE,
     OUTPUT_SCHEMA_VERSION,
-    RECENT_DAILY_WINS_CAP,
-    RECENT_LEARNING_EVENTS_CAP,
+    RECENT_THEMES_CAP,
 )
 from daily_win_api.domains.learning.enums import EvidenceKind, EvidenceSource
 from daily_win_api.domains.learning.events import append_learning_event
 from daily_win_api.domains.learning.schemas import LearningEventCreate
 
 
-def test_context_builder_loads_current_baseline_and_goals(db_session) -> None:
+def test_context_builder_loads_engagement_profile_and_instruction_plan(
+    db_session,
+) -> None:
     seed_development_data(db_session)
     db_session.flush()
     child = get_demo_child(db_session)
@@ -34,19 +36,21 @@ def test_context_builder_loads_current_baseline_and_goals(db_session) -> None:
     assert context.parent_reported_baseline.reporting_kind == "parent_reported"
     assert context.parent_reported_baseline.age_years == 7
     assert context.parent_reported_baseline.grade == "1"
-    assert context.primary_goal_skill_code == "growth.persistence"
-    assert [goal.skill_code for goal in context.active_goals] == [
-        "growth.persistence",
-        "writing.organization",
-        "growth.independence",
-    ]
+    assert (
+        context.instruction_plan.primary_skill_code
+        == "writing.sentences.complete_sentence"
+    )
+    assert "parent_priority" in context.instruction_plan.selection_reason_codes
+    assert context.instruction_plan.growth_target_code == "growth.persistence"
+    dumped = context.model_dump()
     assert manifest.child_id == child.id
     assert manifest.household_id == child.household_id
-    assert "child_id" not in context.model_dump()
-    assert "household_id" not in context.model_dump()
+    assert "child_id" not in dumped
+    assert "household_id" not in dumped
+    assert "id" not in dumped
 
 
-def test_context_builder_caps_recent_learning_events(db_session) -> None:
+def test_context_builder_does_not_send_arbitrary_event_rows(db_session) -> None:
     seed_development_data(db_session)
     child = get_demo_child(db_session)
     assert child is not None
@@ -61,19 +65,20 @@ def test_context_builder_caps_recent_learning_events(db_session) -> None:
                 source=EvidenceSource.PARENT,
                 event_type=f"synthetic_event_{index}",
                 occurred_at=base - timedelta(minutes=index),
-                payload={"synthetic": True, "index": index},
+                payload={"synthetic": True, "index": index, "note": "secret"},
             ),
         )
     db_session.flush()
 
-    context, manifest = build_daily_win_context(db_session, child)
+    context, _manifest = build_daily_win_context(db_session, child)
+    blob = context.model_dump_json()
 
-    assert len(context.recent_learning_events) == RECENT_LEARNING_EVENTS_CAP
-    assert len(manifest.learning_event_ids) == RECENT_LEARNING_EVENTS_CAP
-    assert context.recent_learning_events[0].event_type == "synthetic_event_0"
+    assert len(context.bounded_evidence_summaries) <= BOUNDED_EVIDENCE_CAP
+    assert "synthetic_event_" not in blob
+    assert "secret" not in blob
 
 
-def test_context_builder_includes_adaptation_directive(db_session) -> None:
+def test_context_builder_includes_growth_adaptation_on_plan(db_session) -> None:
     seed_development_data(db_session)
     reset_demo_derived_data(db_session)
     db_session.flush()
@@ -82,14 +87,12 @@ def test_context_builder_includes_adaptation_directive(db_session) -> None:
 
     context, _manifest = build_daily_win_context(db_session, child)
 
-    assert context.adaptation_directive is not None
-    assert context.adaptation_directive.skill_code == "growth.persistence"
-    assert context.adaptation_directive.latest_signal == "no_signal"
-    assert len(context.recent_learning_events) <= RECENT_LEARNING_EVENTS_CAP
-    assert len(context.recent_daily_wins) <= RECENT_DAILY_WINS_CAP
+    assert context.instruction_plan.growth_target_code == "growth.persistence"
+    assert context.instruction_plan.growth_adaptation_summary is not None
+    assert len(context.recent_themes) <= RECENT_THEMES_CAP
 
 
-def test_context_builder_caps_prior_daily_wins(db_session) -> None:
+def test_context_builder_caps_recent_themes(db_session) -> None:
     seed_development_data(db_session)
     child = get_demo_child(db_session)
     assert child is not None
@@ -105,9 +108,10 @@ def test_context_builder_caps_prior_daily_wins(db_session) -> None:
 
     context, manifest = build_daily_win_context(db_session, child)
 
-    assert len(context.recent_daily_wins) == RECENT_DAILY_WINS_CAP
-    assert len(manifest.prior_daily_win_ids) == RECENT_DAILY_WINS_CAP
-    assert context.recent_daily_wins[0].title == "Prior Win 3"
+    assert len(context.recent_themes) == RECENT_THEMES_CAP
+    assert len(manifest.prior_daily_win_ids) == RECENT_THEMES_CAP
+    assert context.recent_themes[0] == "Prior Win 3"
+    assert "Prior Win 0" not in context.recent_themes
 
 
 def _insert_ready_daily_win(

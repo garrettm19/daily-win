@@ -15,9 +15,7 @@ def household_child_index(index_name: str) -> Index:
 
 
 def id_child_household_unique(constraint_name: str) -> UniqueConstraint:
-    return UniqueConstraint(
-        "id", "child_id", "household_id", name=constraint_name
-    )
+    return UniqueConstraint("id", "child_id", "household_id", name=constraint_name)
 
 
 def daily_win_child_household_foreign_key(

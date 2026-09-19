@@ -1,13 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { StyleSheet, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import { ApiError } from '@/lib/api/client';
@@ -15,10 +7,35 @@ import {
   fetchLatestDemoDailyWin,
   submitDemoDailyWinFeedback,
 } from '@/lib/api/demo';
+import { parentMessage, type ApiErrorKind } from '@/lib/api/parentErrors';
+import { hapticSuccess } from '@/lib/haptics';
+import {
+  clearReflectionDraft,
+  loadReflectionDraft,
+  saveReflectionDraft,
+} from '@/lib/reflectionDraft';
+import { clampText, TEXT_LIMITS } from '@/lib/textLimits';
 import type {
+  AcademicResult,
   DailyWinFeedbackCreate,
   DemoDailyWin,
 } from '@/lib/api/types';
+import {
+  ACADEMIC_RESULT_OPTIONS,
+  SUPPORT_CAPTION,
+  asksAboutSetback,
+  asksForCounts,
+  countsAreValid,
+  hasAcademicProbe,
+} from '@/lib/academicLoop';
+import { colors, radius, space } from '@/theme';
+import { AppButton } from '@/ui/AppButton';
+import { AppText } from '@/ui/AppText';
+import { ChoiceChip } from '@/ui/ChoiceChip';
+import { ErrorCallout } from '@/ui/ErrorCallout';
+import { Screen } from '@/ui/Screen';
+import { ScreenLoading } from '@/ui/ScreenLoading';
+import { SectionLabel } from '@/ui/SectionLabel';
 
 const DIFFICULTY: { value: DailyWinFeedbackCreate['difficulty']; label: string }[] =
   [
@@ -57,6 +74,7 @@ export default function ReflectScreen() {
   const [dailyWin, setDailyWin] = useState<DemoDailyWin | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [errorKind, setErrorKind] = useState<ApiErrorKind | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [difficulty, setDifficulty] =
@@ -67,6 +85,9 @@ export default function ReflectScreen() {
     useState<DailyWinFeedbackCreate['completion'] | null>(null);
   const [setbackResponse, setSetbackResponse] =
     useState<DailyWinFeedbackCreate['setback_response'] | null>(null);
+  const [academicResult, setAcademicResult] = useState<AcademicResult | null>(null);
+  const [correctCount, setCorrectCount] = useState<string>('');
+  const [attemptedCount, setAttemptedCount] = useState<string>('');
   const [whatHelped, setWhatHelped] = useState('');
   const [additionalNote, setAdditionalNote] = useState('');
   const generationRef = useRef(0);
@@ -84,19 +105,31 @@ export default function ReflectScreen() {
           setDailyWin(null);
           return;
         }
+        const draft = loadReflectionDraft(result.id);
+        if (draft) {
+          setDifficulty(draft.difficulty);
+          setEngagement(draft.engagement);
+          setCompletion(draft.completion);
+          setSetbackResponse(draft.setbackResponse);
+          setAcademicResult(draft.academicResult ?? null);
+          setCorrectCount(
+            draft.correctCount === null ? '' : String(draft.correctCount),
+          );
+          setAttemptedCount(
+            draft.attemptedCount === null ? '' : String(draft.attemptedCount),
+          );
+          setWhatHelped(draft.whatHelped);
+          setAdditionalNote(draft.additionalNote);
+        }
         setDailyWin(result);
         setError(null);
       })
-      .catch((caught: unknown) => {
+      .catch(() => {
         if (generation !== generationRef.current) {
           return;
         }
-        setDailyWin(null);
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : 'The Daily Win could not be loaded.',
-        );
+        setError(parentMessage('load'));
+        setErrorKind('unavailable');
       })
       .finally(() => {
         if (generation === generationRef.current) {
@@ -108,11 +141,68 @@ export default function ReflectScreen() {
     };
   }, []);
 
+  const persistDraft = useCallback(
+    (patch: {
+      difficulty?: DailyWinFeedbackCreate['difficulty'] | null;
+      engagement?: DailyWinFeedbackCreate['engagement'] | null;
+      completion?: DailyWinFeedbackCreate['completion'] | null;
+      setbackResponse?: DailyWinFeedbackCreate['setback_response'] | null;
+      academicResult?: AcademicResult | null;
+      correctCount?: string;
+      attemptedCount?: string;
+      whatHelped?: string;
+      additionalNote?: string;
+    }) => {
+      if (dailyWin === null) {
+        return;
+      }
+      const helped = patch.whatHelped ?? whatHelped;
+      const extra = patch.additionalNote ?? additionalNote;
+      const correctRaw = patch.correctCount ?? correctCount;
+      const attemptedRaw = patch.attemptedCount ?? attemptedCount;
+      saveReflectionDraft({
+        dailyWinId: dailyWin.id,
+        difficulty: patch.difficulty !== undefined ? patch.difficulty : difficulty,
+        engagement: patch.engagement !== undefined ? patch.engagement : engagement,
+        completion: patch.completion !== undefined ? patch.completion : completion,
+        setbackResponse:
+          patch.setbackResponse !== undefined ? patch.setbackResponse : setbackResponse,
+        academicResult:
+          patch.academicResult !== undefined ? patch.academicResult : academicResult,
+        correctCount: correctRaw === '' ? null : Number(correctRaw),
+        attemptedCount: attemptedRaw === '' ? null : Number(attemptedRaw),
+        whatHelped: helped,
+        additionalNote: extra,
+      });
+    },
+    [
+      additionalNote,
+      academicResult,
+      attemptedCount,
+      completion,
+      correctCount,
+      dailyWin,
+      difficulty,
+      engagement,
+      setbackResponse,
+      whatHelped,
+    ],
+  );
+
+  const needsAcademic = hasAcademicProbe(dailyWin);
+  const needsSetback = asksAboutSetback(dailyWin);
+  const needsCounts = asksForCounts(dailyWin);
+  const parsedCorrect = correctCount === '' ? null : Number(correctCount);
+  const parsedAttempted = attemptedCount === '' ? null : Number(attemptedCount);
+  const countOk = !needsCounts || countsAreValid(parsedCorrect, parsedAttempted);
+
   const canSubmit =
     difficulty !== null &&
     engagement !== null &&
     completion !== null &&
-    setbackResponse !== null &&
+    (!needsSetback || setbackResponse !== null) &&
+    (!needsAcademic || academicResult !== null) &&
+    countOk &&
     !submitting &&
     dailyWin !== null &&
     !dailyWin.has_feedback;
@@ -126,7 +216,9 @@ export default function ReflectScreen() {
       difficulty === null ||
       engagement === null ||
       completion === null ||
-      setbackResponse === null
+      (needsAcademic && academicResult === null) ||
+      (needsSetback && setbackResponse === null) ||
+      !countOk
     ) {
       return;
     }
@@ -134,12 +226,20 @@ export default function ReflectScreen() {
     setSubmitting(true);
     setError(null);
     setErrorCode(null);
+    setErrorKind(null);
     const payload: DailyWinFeedbackCreate = {
       difficulty,
       engagement,
       completion,
-      setback_response: setbackResponse,
+      setback_response: setbackResponse ?? 'no_setback_occurred',
     };
+    if (needsAcademic && academicResult) {
+      payload.academic_result = academicResult;
+      if (needsCounts && parsedCorrect !== null && parsedAttempted !== null) {
+        payload.correct_count = parsedCorrect;
+        payload.attempted_count = parsedAttempted;
+      }
+    }
     const helped = whatHelped.trim();
     const extra = additionalNote.trim();
     if (helped) {
@@ -150,30 +250,41 @@ export default function ReflectScreen() {
     }
     void submitDemoDailyWinFeedback(dailyWin.id, payload)
       .then((result) => {
+        clearReflectionDraft(dailyWin.id);
+        hapticSuccess();
         router.replace({
           pathname: '/insight',
           params: {
             observation: result.insight.observation,
-            next_adjustment: result.insight.next_adjustment,
+            next_adjustment:
+              result.what_changes_next ?? result.insight.next_adjustment,
             nickname: dailyWin.child_nickname,
+            academic_observation: result.academic_observation ?? '',
+            growth_observation:
+              result.growth_observation ?? result.insight.observation,
+            academic_area: result.what_we_learned?.[0]?.area ?? '',
           },
         });
       })
       .catch((caught: unknown) => {
         submitLock.current = false;
         if (caught instanceof ApiError) {
-          setError(caught.message);
+          setError(
+            caught.errorCode === 'already_submitted'
+              ? 'This Daily Win already has a reflection.'
+              : parentMessage('saveReflection', caught.kind),
+          );
           setErrorCode(caught.errorCode ?? null);
+          setErrorKind(caught.kind);
           if (caught.errorCode === 'already_submitted') {
+            clearReflectionDraft(dailyWin.id);
             setDailyWin({ ...dailyWin, has_feedback: true });
+            router.dismissTo('/daily-win');
           }
           return;
         }
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : 'Reflection could not be saved. Please try again.',
-        );
+        setError(parentMessage('saveReflection'));
+        setErrorKind('unavailable');
       })
       .finally(() => {
         setSubmitting(false);
@@ -181,128 +292,235 @@ export default function ReflectScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      {loading ? (
-        <View style={styles.centered}>
-          <Text style={styles.brand}>Daily Win</Text>
-          <Text style={styles.statusTitle}>Loading this Daily Win</Text>
-        </View>
-      ) : null}
+    <Screen keyboard>
+      {loading ? <ScreenLoading title="Loading this Daily Win" /> : null}
       {!loading && error && dailyWin === null ? (
-        <View style={styles.centered}>
-          <Text style={styles.brand}>Daily Win</Text>
-          <Text style={styles.statusTitle}>{"Couldn't load the Daily Win"}</Text>
-          <Text style={styles.statusBody}>{error}</Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-            onPress={() => router.back()}
-            style={({ pressed }) => [styles.button, pressed && styles.pressed]}>
-            <Text style={styles.buttonLabel}>Go back</Text>
-          </Pressable>
-        </View>
+        <ErrorCallout
+          message={parentMessage('load')}
+          onRetry={() => {
+            setLoading(true);
+            setError(null);
+            generationRef.current += 1;
+            const generation = generationRef.current;
+            void fetchLatestDemoDailyWin()
+              .then((result) => {
+                if (generation !== generationRef.current) {
+                  return;
+                }
+                if (result === null) {
+                  setError('No Daily Win is available yet.');
+                  setDailyWin(null);
+                  return;
+                }
+                setDailyWin(result);
+                setError(null);
+              })
+              .catch(() => {
+                if (generation !== generationRef.current) {
+                  return;
+                }
+                setError(parentMessage('load'));
+              })
+              .finally(() => {
+                if (generation === generationRef.current) {
+                  setLoading(false);
+                }
+              });
+          }}
+        />
       ) : null}
       {!loading && dailyWin ? (
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <Text style={styles.brand}>Daily Win</Text>
-          <Text style={styles.title}>How did it go?</Text>
-          <Text style={styles.meta}>
-            A short report for {dailyWin.child_nickname}. No extra writing required.
-          </Text>
+        <>
+            <AppText variant="screenTitle">How did it go?</AppText>
+            <AppText variant="secondary" style={styles.meta}>
+              About a minute.
+            </AppText>
 
-          {dailyWin.has_feedback ? (
-            <Text style={styles.error}>This Daily Win already has a reflection.</Text>
-          ) : null}
+            {dailyWin.has_feedback ? (
+              <ErrorCallout message="This Daily Win already has a reflection." />
+            ) : null}
 
-          <ChoiceGroup
-            title="Difficulty"
-            options={DIFFICULTY}
-            value={difficulty}
-            onChange={setDifficulty}
-            disabled={submitting || dailyWin.has_feedback}
-          />
-          <ChoiceGroup
-            title="Engagement"
-            options={ENGAGEMENT}
-            value={engagement}
-            onChange={setEngagement}
-            disabled={submitting || dailyWin.has_feedback}
-          />
-          <ChoiceGroup
-            title="Completion"
-            options={COMPLETION}
-            value={completion}
-            onChange={setCompletion}
-            disabled={submitting || dailyWin.has_feedback}
-          />
-          <ChoiceGroup
-            title="After the first setback..."
-            options={SETBACK}
-            value={setbackResponse}
-            onChange={setSetbackResponse}
-            disabled={submitting || dailyWin.has_feedback}
-          />
+            <ChoiceGroup
+              title="Difficulty"
+              options={DIFFICULTY}
+              value={difficulty}
+              onChange={(value) => {
+                setDifficulty(value);
+                persistDraft({ difficulty: value });
+              }}
+              disabled={submitting || dailyWin.has_feedback}
+            />
+            <ChoiceGroup
+              title="Engagement"
+              options={ENGAGEMENT}
+              value={engagement}
+              onChange={(value) => {
+                setEngagement(value);
+                persistDraft({ engagement: value });
+              }}
+              disabled={submitting || dailyWin.has_feedback}
+            />
+            <ChoiceGroup
+              title="Completion"
+              options={COMPLETION}
+              value={completion}
+              onChange={(value) => {
+                setCompletion(value);
+                persistDraft({ completion: value });
+              }}
+              disabled={submitting || dailyWin.has_feedback}
+            />
+            {needsAcademic && dailyWin.assessment ? (
+              <>
+                <ChoiceGroup
+                  title="How did this part go?"
+                  caption={[
+                    dailyWin.assessment.prompt_label,
+                    dailyWin.assessment.support_caption ?? SUPPORT_CAPTION,
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  options={ACADEMIC_RESULT_OPTIONS}
+                  value={academicResult}
+                  onChange={(value) => {
+                    setAcademicResult(value);
+                    persistDraft({ academicResult: value });
+                  }}
+                  disabled={submitting || dailyWin.has_feedback}
+                />
+                {needsCounts ? (
+                  <View style={styles.group}>
+                    <SectionLabel>How many were correct?</SectionLabel>
+                    <View style={styles.countRow}>
+                      <TextInput
+                        accessibilityLabel="Correct count"
+                        keyboardType="number-pad"
+                        value={correctCount}
+                        onChangeText={(value) => {
+                          const next = value.replace(/[^0-9]/g, '').slice(0, 2);
+                          setCorrectCount(next);
+                          persistDraft({ correctCount: next });
+                        }}
+                        placeholder="0"
+                        placeholderTextColor={colors.textSecondary}
+                        editable={!submitting && !dailyWin.has_feedback}
+                        style={styles.countInput}
+                      />
+                      <AppText variant="secondary">out of</AppText>
+                      <TextInput
+                        accessibilityLabel="Attempted count"
+                        keyboardType="number-pad"
+                        value={attemptedCount}
+                        onChangeText={(value) => {
+                          const next = value.replace(/[^0-9]/g, '').slice(0, 2);
+                          setAttemptedCount(next);
+                          persistDraft({ attemptedCount: next });
+                        }}
+                        placeholder="0"
+                        placeholderTextColor={colors.textSecondary}
+                        editable={!submitting && !dailyWin.has_feedback}
+                        style={styles.countInput}
+                      />
+                    </View>
+                    <AppText variant="caption">Optional</AppText>
+                  </View>
+                ) : null}
+              </>
+            ) : null}
 
-          <Text style={styles.sectionTitle}>What helped them rejoin?</Text>
-          <TextInput
-            accessibilityLabel="What helped them rejoin"
-            value={whatHelped}
-            onChangeText={setWhatHelped}
-            placeholder="Optional"
-            placeholderTextColor="#8A8279"
-            editable={!submitting && !dailyWin.has_feedback}
-            style={styles.input}
-            multiline
-          />
-          <Text style={styles.sectionTitle}>Anything else?</Text>
-          <TextInput
-            accessibilityLabel="Anything else"
-            value={additionalNote}
-            onChangeText={setAdditionalNote}
-            placeholder="Optional"
-            placeholderTextColor="#8A8279"
-            editable={!submitting && !dailyWin.has_feedback}
-            style={styles.input}
-            multiline
-          />
+            {needsSetback ? (
+            <ChoiceGroup
+              title="After the first setback..."
+              options={SETBACK}
+              value={setbackResponse}
+              onChange={(value) => {
+                setSetbackResponse(value);
+                persistDraft({ setbackResponse: value });
+              }}
+              disabled={submitting || dailyWin.has_feedback}
+            />
+            ) : null}
 
-          {error && dailyWin ? (
-            <>
-              <Text style={styles.error}>{error}</Text>
-              {errorCode ? (
-                <Text style={styles.devError}>{`Dev error: ${errorCode}`}</Text>
-              ) : null}
-            </>
-          ) : null}
+            {needsSetback ? (
+              <>
+            <SectionLabel>What helped them rejoin?</SectionLabel>
+            <AppText variant="caption" style={styles.optional}>
+              Optional
+            </AppText>
+            <TextInput
+              accessibilityLabel="What helped them rejoin, optional"
+              value={whatHelped}
+              onChangeText={(value) => {
+                const next = clampText(value, TEXT_LIMITS.reflectionNote);
+                setWhatHelped(next);
+                persistDraft({ whatHelped: next });
+              }}
+              placeholder="Optional"
+              placeholderTextColor={colors.textSecondary}
+              editable={!submitting && !dailyWin.has_feedback}
+              maxLength={TEXT_LIMITS.reflectionNote}
+              style={styles.input}
+              multiline
+            />
+              </>
+            ) : null}
+            <SectionLabel>Anything else?</SectionLabel>
+            <AppText variant="caption" style={styles.optional}>
+              Optional
+            </AppText>
+            <TextInput
+              accessibilityLabel="Anything else, optional"
+              value={additionalNote}
+              onChangeText={(value) => {
+                const next = clampText(value, TEXT_LIMITS.reflectionNote);
+                setAdditionalNote(next);
+                persistDraft({ additionalNote: next });
+              }}
+              placeholder="Optional"
+              placeholderTextColor={colors.textSecondary}
+              editable={!submitting && !dailyWin.has_feedback}
+              maxLength={TEXT_LIMITS.reflectionNote}
+              style={styles.input}
+              multiline
+            />
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Save reflection"
-            disabled={!canSubmit}
-            onPress={handleSubmit}
-            style={({ pressed }) => [
-              styles.button,
-              !canSubmit && styles.disabled,
-              pressed && canSubmit && styles.pressed,
-            ]}>
-            <Text style={styles.buttonLabel}>
-              {submitting ? 'Saving…' : 'Save reflection'}
-            </Text>
-          </Pressable>
-        </ScrollView>
+            {error && dailyWin ? (
+              <ErrorCallout
+                message={error}
+                errorCode={errorCode}
+                errorKind={errorKind}
+              />
+            ) : null}
+
+            <AppButton
+              label={submitting ? 'Saving reflection…' : 'Save reflection'}
+              accessibilityLabel="Save reflection"
+              disabled={!canSubmit}
+              loading={submitting}
+              onPress={handleSubmit}
+            />
+            <AppButton
+              label="Cancel"
+              variant="secondary"
+              disabled={submitting}
+              onPress={() => router.back()}
+            />
+        </>
       ) : null}
-    </SafeAreaView>
+    </Screen>
   );
 }
 
 function ChoiceGroup<T extends string>({
   title,
+  caption,
   options,
   value,
   onChange,
   disabled = false,
 }: {
   title: string;
+  caption?: string;
   options: { value: T; label: string }[];
   value: T | null;
   onChange: (value: T) => void;
@@ -310,156 +528,75 @@ function ChoiceGroup<T extends string>({
 }) {
   return (
     <View style={styles.group}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+      <SectionLabel>{title}</SectionLabel>
+      {caption ? (
+        <AppText variant="caption" style={styles.caption}>
+          {caption}
+        </AppText>
+      ) : null}
       <View style={styles.chipRow}>
-        {options.map((option) => {
-          const selected = option.value === value;
-          return (
-            <Pressable
-              key={option.value}
-              accessibilityRole="button"
-              accessibilityState={{ selected, disabled }}
-              accessibilityLabel={option.label}
-              disabled={disabled}
-              onPress={() => onChange(option.value)}
-              style={({ pressed }) => [
-                styles.chip,
-                selected && styles.chipSelected,
-                pressed && !disabled && styles.pressed,
-              ]}>
-              <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
-                {option.label}
-              </Text>
-            </Pressable>
-          );
-        })}
+        {options.map((option) => (
+          <ChoiceChip
+            key={option.value}
+            label={option.label}
+            selected={option.value === value}
+            disabled={disabled}
+            onPress={() => onChange(option.value)}
+          />
+        ))}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F4F1EB',
-  },
-  scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 12,
-    paddingBottom: 40,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 28,
-  },
-  brand: {
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    color: '#6F6A64',
-  },
-  title: {
-    marginTop: 10,
-    fontSize: 28,
-    lineHeight: 34,
-    fontWeight: '700',
-    color: '#1C1917',
-  },
   meta: {
-    marginTop: 6,
-    fontSize: 16,
-    color: '#6F6A64',
-  },
-  statusTitle: {
-    marginTop: 16,
-    fontSize: 24,
-    fontWeight: '600',
-    color: '#1C1917',
-  },
-  statusBody: {
-    marginTop: 10,
-    fontSize: 16,
-    lineHeight: 24,
-    color: '#6F6A64',
+    marginTop: space.xs,
+    marginBottom: space.sm,
   },
   group: {
-    marginTop: 22,
+    marginTop: space.md,
+    gap: space.xs,
   },
-  sectionTitle: {
-    marginTop: 22,
-    marginBottom: 10,
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    color: '#6F6A64',
+  caption: {
+    marginBottom: space.xs,
+  },
+  countRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  countInput: {
+    width: 56,
+    minHeight: 44,
+    paddingHorizontal: 8,
+    borderRadius: radius.input,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    color: colors.textPrimary,
+    fontSize: 17,
+    textAlign: 'center',
+  },
+  optional: {
+    marginTop: space.md,
+    marginBottom: space.xs,
   },
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  chip: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    borderWidth: 2,
-    borderColor: '#D7D0C6',
-    backgroundColor: '#EDE8E0',
-  },
-  chipSelected: {
-    backgroundColor: '#2C4A3E',
-    borderColor: '#1C1917',
-  },
-  chipLabel: {
-    fontSize: 14,
-    color: '#3F3A36',
-    fontWeight: '600',
-  },
-  chipLabelSelected: {
-    color: '#F8F6F1',
-  },
   input: {
-    minHeight: 72,
+    minHeight: 80,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: radius.input,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#E6E0D6',
-    backgroundColor: '#FFFcf7',
-    color: '#1C1917',
-    fontSize: 16,
+    borderColor: colors.borderSubtle,
+    color: colors.textPrimary,
+    fontSize: 17,
+    lineHeight: 24,
     textAlignVertical: 'top',
-  },
-  error: {
-    marginTop: 16,
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#8A3A2A',
-  },
-  devError: {
-    marginTop: 6,
-    fontSize: 13,
-    color: '#8A7E74',
-  },
-  button: {
-    alignSelf: 'flex-start',
-    marginTop: 24,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    backgroundColor: '#2C4A3E',
-  },
-  disabled: {
-    opacity: 0.45,
-  },
-  buttonLabel: {
-    color: '#F8F6F1',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  pressed: {
-    opacity: 0.88,
   },
 });

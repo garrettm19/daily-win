@@ -5,12 +5,26 @@ from daily_win_api.ai.prompts.daily_win_v1 import (
 from daily_win_api.ai.prompts.daily_win_v2 import (
     PROMPT_VERSION as V2_PROMPT_VERSION,
 )
+from daily_win_api.ai.prompts.daily_win_v3 import (
+    PROMPT_VERSION as V3_PROMPT_VERSION,
+)
+from daily_win_api.ai.prompts.daily_win_v3 import (
+    SYSTEM_PROMPT as V3_SYSTEM_PROMPT,
+)
+from daily_win_api.ai.prompts.daily_win_v4 import (
+    PROMPT_VERSION as V4_PROMPT_VERSION,
+)
+from daily_win_api.ai.prompts.daily_win_v4 import (
+    SYSTEM_PROMPT as V4_SYSTEM_PROMPT,
+)
 
 
-def test_active_prompt_version_is_v3() -> None:
-    assert PROMPT_VERSION == "daily_win_generator_v3"
+def test_active_prompt_version_is_v5() -> None:
+    assert PROMPT_VERSION == "daily_win_generator_v5"
     assert V1_PROMPT_VERSION == "daily_win_generator_v1"
     assert V2_PROMPT_VERSION == "daily_win_generator_v2"
+    assert V3_PROMPT_VERSION == "daily_win_generator_v3"
+    assert V4_PROMPT_VERSION == "daily_win_generator_v4"
 
 
 def test_prompt_requires_skimmable_parent_briefing() -> None:
@@ -39,11 +53,11 @@ def test_prompt_requires_academic_learn_and_one_theme() -> None:
     assert "must not be merely generic planning" in text
     assert "one coherent theme" in text
     assert "unnecessary scripts" in text
-    assert "math, reading, or writing" in text
+    assert "planned target skill" in text
 
 
 def test_v3_prompt_does_not_overstate_evidence() -> None:
-    text = SYSTEM_PROMPT
+    text = V3_SYSTEM_PROMPT
     assert "Use the supplied AdaptationDirective." in text
     assert "Do not infer more than the evidence supports." in text
     assert "meaningful but modest adjustment" in text
@@ -51,3 +65,24 @@ def test_v3_prompt_does_not_overstate_evidence() -> None:
     assert "Hayes has strong persistence now." in text
     assert "Not acceptable:" in text
     assert "permanent trait" in text
+
+
+def test_v4_prompt_is_immutable_and_authoritative() -> None:
+    text = V4_SYSTEM_PROMPT
+    assert V4_PROMPT_VERSION == "daily_win_generator_v4"
+    assert "THE INSTRUCTION PLAN IS AUTHORITATIVE." in text
+    assert "Renderer contracts (application-enforced" not in text
+
+
+def test_v5_prompt_treats_instruction_plan_as_authoritative() -> None:
+    text = SYSTEM_PROMPT
+    assert "THE INSTRUCTION PLAN IS AUTHORITATIVE." in text
+    assert "You may NOT change:" in text
+    assert (
+        "Instructional personalization always wins over engagement personalization."
+        in text
+    )
+    assert "A soccer theme does not change the target skill." in text
+    assert "Renderer contracts (application-enforced" in text
+    assert "three_step_visual" in text
+    assert "growth target is an overlay" in text

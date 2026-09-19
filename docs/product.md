@@ -54,6 +54,47 @@ The first demo has one job, and it must be unmistakable:
 
 If a reviewer cannot see that the child’s stored understanding changed, and cannot see that the next Daily Win is different because of that change, the demo has failed—even if generation, UI, or coaching look polished.
 
+The demo gives each development installation an isolated synthetic session. Mason resetting does not affect Cory. **Real child personal information must not be used in the public-tunnel demo.**
+
+## V0.2 demo (development)
+
+**DEMO IMPLEMENTATION.** This is still a development demo on `X-Demo-Session` isolation. That header is **not authentication** and must not exist in production.
+
+A tester can:
+
+1. **First Run** — choose the Hayes preset or create a synthetic demo profile.
+2. **Parent Setup** — about 2–3 minutes of made-up developmental context (no real-child PII fields).
+3. **Daily Win** — generate a personalized activity from the latest baseline and goals.
+4. **Reflection** — parent reports what happened.
+5. **Evidence** — application code writes canonical learning events.
+6. **Adaptation** — the next Win uses rebuilt learner state.
+7. **Progress** — a cautious, evidence-based parent view (no fake scores).
+8. **History** — recent Daily Wins, newest first; past reflected Wins are read-only.
+
+Hayes remains the one-tap path. Custom synthetic profiles use the same ContextBuilder. Profile edits insert a new latest baseline and reorder/deactivate goals; they never rewrite old Wins or events.
+
+### Production requirements (not implemented)
+
+Production still requires authenticated household membership, RLS, real-child data minimization review, deletion workflows, and the rest of the security roadmap. Do not treat demo-session isolation as those controls.
+
+## V0.3 learner engine (backend)
+
+The LLM still renders the activity. Daily Win decides **what to teach, how hard, how much scaffold, and what to observe**. See [learner-model.md](learner-model.md) and [ai-architecture.md](ai-architecture.md).
+
+Do not add production auth, AWS, billing, real-child data, peer percentiles, deep knowledge tracing, or a general-purpose agent loop in this phase.
+
+## V0.3.1 academic loop (mobile demo)
+
+A V4 Daily Win now shows a parent-facing check, reflection can submit `academic_result`, and Progress/Insight show cautious academic state separately from growth. InstructionPlanner remains the instructional owner. Decision verification stays off in the normal demo.
+
+Do not add production auth, AWS, billing, real-child data, peer percentiles, or a general-purpose agent loop in this phase.
+
+## V0.3.2 educational quality (offline eval)
+
+The academic loop is connected. V0.3.2 does **not** add product features. It asks whether instructional decisions are actually good: curriculum audit, planner golden cases, probe validity, learner-state edges, parent burden, and anti-patterns. See [educational-quality.md](educational-quality.md) and [planner-evaluation.md](planner-evaluation.md).
+
+DecisionGateway stays off in the normal demo. Peer percentiles stay off.
+
 ## Explicit non-goals
 
 Daily Win is **not**:

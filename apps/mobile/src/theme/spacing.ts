@@ -1,0 +1,15 @@
+export const space = {
+  xxs: 4,
+  xs: 8,
+  sm: 12,
+  md: 16,
+  lg: 20,
+  xl: 24,
+  xxl: 32,
+  xxxl: 40,
+  screenX: 20,
+  screenTop: 8,
+  screenBottom: 40,
+  card: 20,
+  section: 32,
+} as const;

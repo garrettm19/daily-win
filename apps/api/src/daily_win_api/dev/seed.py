@@ -1,44 +1,46 @@
-from datetime import UTC, datetime
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from daily_win_api.core.demo import (
     DEMO_CHILD_ID,
-    DEMO_CHILD_NICKNAME,
     DEMO_HOUSEHOLD_ID,
     demo_baseline_id,
     demo_goal_id,
     skill_id_for_code,
 )
-from daily_win_api.domains.children.models import Child, ChildBaseline
-from daily_win_api.domains.children.schemas import ChildBaselineCreate
-from daily_win_api.domains.households.models import Household
-from daily_win_api.domains.learning.models import ChildGoal, Skill
+from daily_win_api.dev.presets import HAYES_PROFILE
+from daily_win_api.dev.profile import apply_synthetic_profile
+from daily_win_api.domains.learning.models import (
+    Skill,
+    SkillPrerequisite,
+    SkillStandardRef,
+)
+from daily_win_api.domains.learning.prerequisites import (
+    PREREQUISITE_EDGES,
+    assert_prerequisites_valid,
+)
+from daily_win_api.domains.learning.standards import SKILL_STANDARD_REFS
 from daily_win_api.domains.learning.taxonomy import SKILL_DEFINITIONS
 
 DEMO_HOUSEHOLD_NAME = "Demo Household"
-HAYES_GOAL_CODES = (
-    "growth.persistence",
-    "writing.organization",
-    "growth.independence",
-)
+HAYES_GOAL_CODES = HAYES_PROFILE.goal_codes
 
 
 def seed_development_data(session: Session) -> None:
     """Idempotent development seed. Not production data and not authorization."""
-    _seed_skills(session)
+    seed_skill_taxonomy(session)
     session.flush()
-    _seed_demo_household(session)
-    session.flush()
-    _seed_demo_child(session)
-    session.flush()
-    _seed_hayes_baseline(session)
-    _seed_hayes_goals(session)
+    seed_hayes_profile(
+        session,
+        household_id=DEMO_HOUSEHOLD_ID,
+        child_id=DEMO_CHILD_ID,
+        baseline_id=demo_baseline_id(),
+        goal_id_for_code=demo_goal_id,
+    )
     session.flush()
 
 
-def _seed_skills(session: Session) -> None:
+def seed_skill_taxonomy(session: Session) -> None:
     existing = {skill.code: skill for skill in session.scalars(select(Skill))}
     for definition in SKILL_DEFINITIONS:
         skill = existing.get(definition["code"])
@@ -50,73 +52,68 @@ def _seed_skills(session: Session) -> None:
         skill.display_name = definition["display_name"]
         skill.description = definition["description"]
         skill.state_mode = definition["state_mode"]
+        skill.skill_kind = definition["skill_kind"]
+        skill.strand = definition.get("strand")
+        skill.parent_code = definition.get("parent_code")
+        skill.grade_band_min = definition["grade_band_min"]
+        skill.grade_band_max = definition["grade_band_max"]
+        skill.measurable_outcome = definition.get("measurable_outcome")
+        skill.progression_position = definition["progression_position"]
+        skill.taxonomy_version = definition["taxonomy_version"]
         skill.active = True
+    seed_prerequisites(session)
+    seed_standard_refs(session)
 
 
-def _seed_demo_household(session: Session) -> None:
-    household = session.get(Household, DEMO_HOUSEHOLD_ID)
-    if household is None:
-        household = Household(id=DEMO_HOUSEHOLD_ID)
-        session.add(household)
-    household.display_name = DEMO_HOUSEHOLD_NAME
+def seed_prerequisites(session: Session) -> None:
+    existing = {
+        (row.skill_code, row.prerequisite_code)
+        for row in session.scalars(select(SkillPrerequisite))
+    }
+    for source, dest in PREREQUISITE_EDGES:
+        key = (dest, source)
+        if key not in existing:
+            session.add(SkillPrerequisite(skill_code=dest, prerequisite_code=source))
+    assert_prerequisites_valid()
 
 
-def _seed_demo_child(session: Session) -> None:
-    child = session.get(Child, DEMO_CHILD_ID)
-    if child is None:
-        child = Child(id=DEMO_CHILD_ID, household_id=DEMO_HOUSEHOLD_ID)
-        session.add(child)
-    child.household_id = DEMO_HOUSEHOLD_ID
-    child.nickname = DEMO_CHILD_NICKNAME
-
-
-def _seed_hayes_baseline(session: Session) -> None:
-    snapshot = ChildBaselineCreate(
-        age_years=7,
-        grade="1",
-        interests=["building things", "soccer", "Minecraft"],
-        strengths=["math", "reading"],
-        current_difficulties=[
-            "writing",
-            "persistence after an initial failure",
-            "independent problem solving",
-        ],
-        motivators=["competition", "short challenges", "doing activities with Dad"],
-        response_to_difficulty="becomes frustrated after the first failure",
-        preferred_activity_minutes=20,
-        schema_version=1,
-    )
-    baseline = session.get(ChildBaseline, demo_baseline_id())
-    if baseline is None:
-        baseline = ChildBaseline(
-            id=demo_baseline_id(),
-            household_id=DEMO_HOUSEHOLD_ID,
-            child_id=DEMO_CHILD_ID,
-            recorded_at=datetime.now(UTC),
+def seed_standard_refs(session: Session) -> None:
+    existing = {
+        (row.skill_code, row.standard_code, row.source, row.version)
+        for row in session.scalars(select(SkillStandardRef))
+    }
+    for item in SKILL_STANDARD_REFS:
+        key = (
+            item["skill_code"],
+            item["standard_code"],
+            item["source"],
+            item["version"],
         )
-        session.add(baseline)
-    baseline.household_id = DEMO_HOUSEHOLD_ID
-    baseline.child_id = DEMO_CHILD_ID
-    baseline.age_years = snapshot.age_years
-    baseline.grade = snapshot.grade
-    baseline.interests = snapshot.interests
-    baseline.strengths = snapshot.strengths
-    baseline.current_difficulties = snapshot.current_difficulties
-    baseline.motivators = snapshot.motivators
-    baseline.response_to_difficulty = snapshot.response_to_difficulty
-    baseline.preferred_activity_minutes = snapshot.preferred_activity_minutes
-    baseline.schema_version = snapshot.schema_version
+        if key not in existing:
+            session.add(
+                SkillStandardRef(
+                    skill_code=item["skill_code"],
+                    standard_code=item["standard_code"],
+                    source=item["source"],
+                    version=item["version"],
+                )
+            )
 
 
-def _seed_hayes_goals(session: Session) -> None:
-    for priority, code in enumerate(HAYES_GOAL_CODES, start=1):
-        goal_id = demo_goal_id(code)
-        goal = session.get(ChildGoal, goal_id)
-        if goal is None:
-            goal = ChildGoal(id=goal_id)
-            session.add(goal)
-        goal.household_id = DEMO_HOUSEHOLD_ID
-        goal.child_id = DEMO_CHILD_ID
-        goal.skill_id = skill_id_for_code(code)
-        goal.priority = priority
-        goal.active = True
+def seed_hayes_profile(
+    session: Session,
+    *,
+    household_id,
+    child_id,
+    baseline_id,
+    goal_id_for_code,
+):
+    """Idempotent Hayes baseline/goals. Does not rewrite historical Daily Wins."""
+    return apply_synthetic_profile(
+        session,
+        household_id=household_id,
+        child_id=child_id,
+        preset=HAYES_PROFILE,
+        baseline_id=baseline_id,
+        goal_id_for_code=goal_id_for_code,
+    )

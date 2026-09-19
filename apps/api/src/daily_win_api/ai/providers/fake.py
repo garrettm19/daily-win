@@ -5,6 +5,7 @@ from daily_win_api.ai.schemas import (
     DailyWinGenerationResult,
     DailyWinModelContext,
     DailyWinSegment,
+    InstructionPlanContext,
     Material,
     ParentBriefing,
     SegmentType,
@@ -152,12 +153,15 @@ class FakeModelGateway:
         provider: str = "fake",
         model: str = "fake-model",
         adaptive_draft: DailyWinDraft | None = None,
+        *,
+        align_to_plan: bool = True,
     ) -> None:
         self.draft = draft or valid_daily_win_draft()
         self.adaptive_draft = adaptive_draft
         self.error = error
         self.provider = provider
         self.model = model
+        self.align_to_plan = align_to_plan
         self.calls: list[DailyWinModelContext] = []
 
     def generate_daily_win(
@@ -167,14 +171,15 @@ class FakeModelGateway:
         if self.error is not None:
             raise self.error
         draft = self.draft
-        directive = context.adaptation_directive
+        plan = context.instruction_plan
         if (
             self.adaptive_draft is not None
-            and context.recent_daily_wins
-            and directive is not None
-            and directive.latest_signal != "no_signal"
+            and context.recent_themes
+            and plan.growth_adaptation_summary
         ):
             draft = self.adaptive_draft
+        if self.align_to_plan:
+            draft = _align_draft_to_plan(draft, context)
         return DailyWinGenerationResult(
             draft=draft,
             provider=self.provider,
@@ -186,3 +191,87 @@ class FakeModelGateway:
             total_tokens=33,
             latency_ms=5,
         )
+
+
+def _align_draft_to_plan(
+    draft: DailyWinDraft, context: DailyWinModelContext
+) -> DailyWinDraft:
+    plan = context.instruction_plan
+    supporting = [
+        code
+        for code in (plan.supporting_skill_code, plan.growth_target_code)
+        if code and code != plan.primary_skill_code
+    ][:2]
+    updates: dict[str, object] = {
+        "primary_skill_code": plan.primary_skill_code,
+        "supporting_skill_codes": supporting,
+        "duration_minutes": plan.duration_minutes,
+    }
+    if plan.growth_adaptation_summary and draft.adaptation_summary is None:
+        updates["adaptation_summary"] = plan.growth_adaptation_summary
+    elif not context.recent_themes:
+        updates["adaptation_summary"] = None
+    probe = plan.assessment_probe if isinstance(plan.assessment_probe, dict) else {}
+    task = str(probe.get("observable_task") or "")
+    expected = str(probe.get("expected_outcome") or "")
+    if task:
+        updates["observation_focus"] = task
+        learn = draft.segments[0]
+        steps = list(learn.steps)
+        if task not in steps:
+            steps = [task, *steps][:6]
+        learn = learn.model_copy(update={"steps": steps})
+        checks = list(draft.success_checks)
+        if expected and expected not in checks:
+            checks = [expected, *checks][:4]
+            updates["success_checks"] = checks
+        updates["segments"] = [
+            learn,
+            draft.segments[1],
+            draft.segments[2],
+        ]
+    aligned = draft.model_copy(update=updates)
+    return _satisfy_renderer_contracts(aligned, plan)
+
+
+def _satisfy_renderer_contracts(
+    draft: DailyWinDraft, plan: InstructionPlanContext
+) -> DailyWinDraft:
+    learn, do, grow = draft.segments
+    steps = list(learn.steps)
+    if plan.scaffold_level == "three_step_visual":
+        pads = (
+            "Touch the example.",
+            "Say the next move.",
+            "Move to one independent try.",
+        )
+        while len(steps) < 3:
+            steps.append(pads[len(steps)])
+        steps = steps[:3]
+    if plan.instruction_mode == "review" and len(steps) < 2:
+        steps.append("Try one small variation, then pause.")
+    learn = learn.model_copy(update={"steps": steps})
+    do = do.model_copy(
+        update={
+            "title": do.title.replace("final", "next").replace("Final", "Next"),
+            "steps": [
+                step.replace("final challenge", "practice try")
+                .replace("final mission", "practice try")
+                .replace("final check", "practice try")
+                .replace("final test", "practice try")
+                for step in do.steps
+            ],
+        }
+    )
+    grow = grow.model_copy(
+        update={
+            "steps": [
+                step.replace("final challenge", "practice try")
+                .replace("final mission", "practice try")
+                .replace("final check", "practice try")
+                .replace("final test", "practice try")
+                for step in grow.steps
+            ]
+        }
+    )
+    return draft.model_copy(update={"segments": [learn, do, grow]})

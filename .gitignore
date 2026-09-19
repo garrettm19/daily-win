@@ -77,3 +77,7 @@ ehthumbs.db
 .turbo/
 tmp/
 temp/
+
+# Model eval outputs (not learner memory)
+apps/api/eval-results/
+

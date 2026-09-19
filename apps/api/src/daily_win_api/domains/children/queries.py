@@ -16,17 +16,22 @@ class DemoChildProfileUnavailableError(Exception):
     """The synthetic demo child or a baseline snapshot is missing."""
 
 
-def load_demo_child_profile(session: Session) -> DemoChildProfileRead:
+def load_demo_child_profile(
+    session: Session,
+    child=None,
+    *,
+    tester_fingerprint: str | None = None,
+) -> DemoChildProfileRead:
     """Compose the demo profile from PostgreSQL. Not authorization."""
-    child = get_demo_child(session)
-    if child is None:
+    resolved = child or get_demo_child(session)
+    if resolved is None:
         raise DemoChildProfileUnavailableError
 
     baseline = session.scalars(
         select(ChildBaseline)
         .where(
-            ChildBaseline.child_id == child.id,
-            ChildBaseline.household_id == child.household_id,
+            ChildBaseline.child_id == resolved.id,
+            ChildBaseline.household_id == resolved.household_id,
         )
         .order_by(ChildBaseline.recorded_at.desc())
         .limit(1)
@@ -38,15 +43,15 @@ def load_demo_child_profile(session: Session) -> DemoChildProfileRead:
         select(ChildGoal, Skill)
         .join(Skill, Skill.id == ChildGoal.skill_id)
         .where(
-            ChildGoal.child_id == child.id,
-            ChildGoal.household_id == child.household_id,
+            ChildGoal.child_id == resolved.id,
+            ChildGoal.household_id == resolved.household_id,
             ChildGoal.active.is_(True),
         )
         .order_by(ChildGoal.priority.asc())
     ).all()
 
     return DemoChildProfileRead(
-        child=DemoChildSummary(id=child.id, nickname=child.nickname),
+        child=DemoChildSummary(id=resolved.id, nickname=resolved.nickname),
         baseline=DemoBaselineSummary(
             age_years=baseline.age_years,
             grade=baseline.grade,
@@ -67,4 +72,5 @@ def load_demo_child_profile(session: Session) -> DemoChildProfileRead:
             )
             for goal, skill in goal_rows
         ],
+        tester_fingerprint=tester_fingerprint,
     )

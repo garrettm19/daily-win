@@ -1,10 +1,25 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Animated, StyleSheet, View } from 'react-native';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 
-import { fetchLatestDemoDailyWin } from '@/lib/api/demo';
-import type { DailyWinSegment, DemoDailyWin } from '@/lib/api/types';
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
+import { fetchDemoDailyWin, fetchLatestDemoDailyWin } from '@/lib/api/demo';
+import { parentMessage } from '@/lib/api/parentErrors';
+import type { DailyWinSegment, DemoDailyWin, LearningEngineDebug } from '@/lib/api/types';
+import { changedTodayCopy } from '@/lib/academicLoop';
+import { colors, motion, space } from '@/theme';
+import { AppButton } from '@/ui/AppButton';
+import { AppText } from '@/ui/AppText';
+import { Card } from '@/ui/Card';
+import { EmptyState } from '@/ui/EmptyState';
+import { ErrorCallout } from '@/ui/ErrorCallout';
+import { GeneratedText } from '@/ui/GeneratedText';
+import { Icon } from '@/ui/Icon';
+import { PhaseBadge } from '@/ui/PhaseBadge';
+import { Screen } from '@/ui/Screen';
+import { ScreenLoading } from '@/ui/ScreenLoading';
+import { SectionLabel } from '@/ui/SectionLabel';
+import { TextButton } from '@/ui/TextButton';
 
 const MATERIAL_LABELS: Record<string, string> = {
   NONE: 'None needed',
@@ -21,17 +36,27 @@ const MATERIAL_LABELS: Record<string, string> = {
   TIMER: 'Timer',
 };
 
+const SEGMENT_ORDER: DailyWinSegment['type'][] = ['LEARN', 'DO', 'GROW'];
+
 export default function DailyWinScreen() {
-  const router = useRouter();
+  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const requestedId = Array.isArray(params.id) ? params.id[0] : params.id;
   const [dailyWin, setDailyWin] = useState<DemoDailyWin | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [started, setStarted] = useState(false);
+  const loadedId = useRef<string | null>(null);
   const generationRef = useRef(0);
 
-  useEffect(() => {
+  const load = useCallback((showLoading: boolean) => {
     const generation = ++generationRef.current;
-    void fetchLatestDemoDailyWin()
+    if (showLoading) {
+      setLoading(true);
+    }
+    const request = requestedId
+      ? fetchDemoDailyWin(requestedId)
+      : fetchLatestDemoDailyWin();
+    void request
       .then((result) => {
         if (generation !== generationRef.current) {
           return;
@@ -41,401 +66,390 @@ export default function DailyWinScreen() {
           setDailyWin(null);
           return;
         }
+        if (loadedId.current !== result.id) {
+          loadedId.current = result.id;
+          setStarted(result.has_feedback);
+        }
         setDailyWin(result);
         setError(null);
       })
-      .catch((caught: unknown) => {
+      .catch(() => {
         if (generation !== generationRef.current) {
           return;
         }
-        setDailyWin(null);
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : 'The Daily Win could not be loaded.',
-        );
+        setError(parentMessage('load'));
       })
       .finally(() => {
         if (generation === generationRef.current) {
           setLoading(false);
         }
       });
-    return () => {
-      generationRef.current += 1;
-    };
-  }, []);
+  }, [requestedId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      load(loadedId.current === null);
+    }, [load]),
+  );
+
+  if (loading && !dailyWin) {
+    return (
+      <Screen scroll={false}>
+        <ScreenLoading title="Loading today’s Daily Win" body="Pulling the saved activity." />
+      </Screen>
+    );
+  }
+
+  if (!loading && error && !dailyWin) {
+    const empty = error === 'No Daily Win is available yet.';
+    return (
+      <Screen scroll={false}>
+        {empty ? (
+          <EmptyState
+            title="No Daily Win is available yet."
+            body="Go home and generate today’s Daily Win."
+          />
+        ) : (
+          <ErrorCallout
+            message={parentMessage('load')}
+            onRetry={() => load(true)}
+          />
+        )}
+      </Screen>
+    );
+  }
+
+  if (!dailyWin) {
+    return (
+      <Screen scroll={false}>
+        <ScreenLoading title="Loading today’s Daily Win" />
+      </Screen>
+    );
+  }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      {loading ? (
-        <Centered
-          title={"Loading today's Daily Win"}
-          body="Pulling the saved activity from Daily Win."
-        />
-      ) : null}
-      {!loading && error ? (
-        <Centered
-          title={"Couldn't load the Daily Win"}
-          body={error}
-          actionLabel="Go back"
-          onAction={() => router.back()}
-        />
-      ) : null}
-      {!loading && dailyWin && !started ? (
-        <Briefing dailyWin={dailyWin} onStart={() => setStarted(true)} />
-      ) : null}
-      {!loading && dailyWin && started ? <Activity dailyWin={dailyWin} /> : null}
-    </SafeAreaView>
+    <Screen>
+      <DailyWinBody
+        key={dailyWin.id}
+        dailyWin={dailyWin}
+        started={started}
+        onStart={() => setStarted(true)}
+      />
+    </Screen>
   );
 }
 
-function Centered({
-  title,
-  body,
-  actionLabel,
-  onAction,
-}: {
-  title: string;
-  body: string;
-  actionLabel?: string;
-  onAction?: () => void;
-}) {
-  return (
-    <View style={styles.centered}>
-      <Text style={styles.brand}>Daily Win</Text>
-      <Text style={styles.statusTitle}>{title}</Text>
-      <Text style={styles.statusBody}>{body}</Text>
-      {actionLabel && onAction ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={actionLabel}
-          onPress={onAction}
-          style={({ pressed }) => [styles.button, pressed && styles.pressed]}>
-          <Text style={styles.buttonLabel}>{actionLabel}</Text>
-        </Pressable>
-      ) : null}
-    </View>
-  );
-}
-
-function Briefing({
+function DailyWinBody({
   dailyWin,
+  started,
   onStart,
 }: {
   dailyWin: DemoDailyWin;
+  started: boolean;
   onStart: () => void;
 }) {
+  const router = useRouter();
+  const reduceMotion = usePrefersReducedMotion();
+  const skipIntro = useRef(started);
+  const [reveal] = useState(() => new Animated.Value(started ? 1 : 0));
+  const changedToday = changedTodayCopy(dailyWin);
   const materials = dailyWin.content.materials
     .filter((item) => item !== 'NONE')
     .map((item) => MATERIAL_LABELS[item] ?? item);
+  const segments = [...dailyWin.content.segments].sort(
+    (left, right) =>
+      SEGMENT_ORDER.indexOf(left.type) - SEGMENT_ORDER.indexOf(right.type),
+  );
+
+  useEffect(() => {
+    if (!started) {
+      return;
+    }
+    if (skipIntro.current) {
+      skipIntro.current = false;
+      reveal.setValue(1);
+      return;
+    }
+    if (reduceMotion) {
+      reveal.setValue(1);
+      return;
+    }
+    reveal.setValue(0);
+    Animated.timing(reveal, {
+      toValue: 1,
+      duration: motion.normal,
+      useNativeDriver: true,
+    }).start();
+  }, [reduceMotion, reveal, started]);
 
   return (
-    <ScrollView contentContainerStyle={styles.scrollContent}>
-      <Text style={styles.brand}>Daily Win</Text>
-      <Text style={styles.title}>{dailyWin.title}</Text>
-      <Text style={styles.meta}>
-        Focus: {dailyWin.primary_skill_display_name} · About{' '}
-        {dailyWin.duration_minutes} minutes
-      </Text>
+    <>
+      <GeneratedText variant="title">{dailyWin.title}</GeneratedText>
+      <AppText variant="secondary" style={styles.meta}>
+        {dailyWin.primary_skill_display_name} • About {dailyWin.duration_minutes}{' '}
+        minutes
+      </AppText>
+      <GeneratedText variant="body" style={styles.objective}>
+        {dailyWin.objective}
+      </GeneratedText>
 
-      {dailyWin.content.adaptation_summary ? (
-        <View style={styles.changeCard}>
-          <Text style={styles.changeEyebrow}>What changed today</Text>
-          <Text style={styles.changeBody}>{dailyWin.content.adaptation_summary}</Text>
-        </View>
+      {changedToday ? (
+        <Card tone="highlight" style={styles.changeCard}>
+          <View style={styles.changeHeader}>
+            <Icon name="sparkles" size={16} color={colors.textPrimary} />
+            <SectionLabel style={styles.changeLabel}>What changed today</SectionLabel>
+          </View>
+          <GeneratedText variant="emphasized" style={styles.changeBody}>
+            {changedToday}
+          </GeneratedText>
+        </Card>
       ) : null}
 
-      <Section title={`Why this fits ${dailyWin.child_nickname}`}>
-        <Text style={styles.body}>{dailyWin.content.personalization_summary}</Text>
-      </Section>
-
-      <Section title="Before you start">
-        <Text style={styles.body}>
-          {materials.length > 0 ? materials.join(', ') : 'No extra materials.'}
-        </Text>
-      </Section>
-
-      <Section title="Parent briefing">
-        <LabelBlock label="Purpose" text={dailyWin.content.parent_briefing.purpose} />
-        <LabelBlock
+      <View style={styles.briefing}>
+        <SectionLabel>Why this Win</SectionLabel>
+        <GeneratedText style={styles.briefIntro}>
+          {dailyWin.content.personalization_summary}
+        </GeneratedText>
+        <BriefBlock label="Purpose" text={dailyWin.content.parent_briefing.purpose} />
+        <BriefBlock
           label="How to coach"
           text={dailyWin.content.parent_briefing.how_to_coach}
         />
-        <LabelBlock
+        <BriefBlock
           label="Watch for"
           text={dailyWin.content.parent_briefing.watch_for}
         />
-        <LabelBlock label="Avoid" text={dailyWin.content.parent_briefing.avoid} />
-      </Section>
+        <BriefBlock label="Avoid" text={dailyWin.content.parent_briefing.avoid} />
+      </View>
 
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Start with ${dailyWin.child_nickname}`}
-        onPress={onStart}
-        style={({ pressed }) => [styles.button, pressed && styles.pressed]}>
-        <Text style={styles.buttonLabel}>{`Start with ${dailyWin.child_nickname}`}</Text>
-      </Pressable>
-    </ScrollView>
-  );
-}
+      <AppText variant="caption" style={styles.materials}>
+        {materials.length > 0
+          ? `Before you start: ${materials.join(', ')}`
+          : 'Before you start: no extra materials.'}
+      </AppText>
 
-function Activity({ dailyWin }: { dailyWin: DemoDailyWin }) {
-  const router = useRouter();
-  return (
-    <ScrollView contentContainerStyle={styles.scrollContent}>
-      <Text style={styles.brand}>Daily Win</Text>
-      <Text style={styles.title}>{dailyWin.title}</Text>
-      <Text style={styles.meta}>Do this together, then continue offline.</Text>
-
-      {dailyWin.content.adaptation_summary ? (
-        <View style={styles.changeCard}>
-          <Text style={styles.changeEyebrow}>What changed today</Text>
-          <Text style={styles.changeBody}>{dailyWin.content.adaptation_summary}</Text>
-        </View>
+      {!started ? (
+        <AppButton
+          label={`Start with ${dailyWin.child_nickname}`}
+          onPress={onStart}
+        />
       ) : null}
 
-      {dailyWin.content.segments.map((segment, index) => (
-        <SegmentCard
-          key={`${segment.type}-${index}`}
-          index={index + 1}
-          segment={segment}
-        />
-      ))}
+      {started ? (
+        <Animated.View
+          style={{
+            opacity: reveal,
+            transform: [
+              {
+                translateY: reveal.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [reduceMotion ? 0 : motion.enterOffset, 0],
+                }),
+              },
+            ],
+          }}>
+          {segments.map((segment) => (
+            <SegmentBlock key={segment.type} segment={segment} />
+          ))}
 
-      <Section title={"If it's too easy"}>
-        <Text style={styles.body}>{dailyWin.content.adaptations.if_too_easy}</Text>
-      </Section>
-      <Section title={"If it's too hard"}>
-        <Text style={styles.body}>{dailyWin.content.adaptations.if_too_hard}</Text>
-      </Section>
-      <Section title="What success looks like">
-        {dailyWin.content.success_checks.map((item) => (
-          <Text key={item} style={styles.listItem}>
-            {item}
-          </Text>
-        ))}
-      </Section>
-      <Section title="What to notice">
-        <Text style={styles.body}>{dailyWin.content.observation_focus}</Text>
-      </Section>
+          {dailyWin.assessment ? (
+            <View style={styles.checkBlock}>
+              <SectionLabel>What to check</SectionLabel>
+              <GeneratedText variant="emphasized">
+                {dailyWin.assessment.what_to_check}
+              </GeneratedText>
+              <SectionLabel>Success looks like</SectionLabel>
+              <GeneratedText>{dailyWin.assessment.success_looks_like}</GeneratedText>
+            </View>
+          ) : null}
 
-      {dailyWin.has_feedback ? (
-        <View style={styles.comingCard}>
-          <Text style={styles.comingTitle}>Reflection saved</Text>
-          <Text style={styles.body}>
-            Daily Win already has your report for this activity.
-          </Text>
-        </View>
-      ) : (
-        <View style={styles.comingCard}>
-          <Text style={styles.comingTitle}>How did it go?</Text>
-          <Text style={styles.body}>
-            A short reflection helps Daily Win adapt the next activity.
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Reflect on this Win"
-            onPress={() => router.push('/reflect')}
-            style={({ pressed }) => [styles.button, pressed && styles.pressed]}>
-            <Text style={styles.buttonLabel}>Reflect on this Win</Text>
-          </Pressable>
-        </View>
-      )}
-    </ScrollView>
+          <View style={styles.adaptBlock}>
+            <SectionLabel>If it’s too easy</SectionLabel>
+            <GeneratedText>{dailyWin.content.adaptations.if_too_easy}</GeneratedText>
+            <SectionLabel>If it’s too hard</SectionLabel>
+            <GeneratedText>{dailyWin.content.adaptations.if_too_hard}</GeneratedText>
+          </View>
+
+          {dailyWin.has_feedback ? (
+            <Card style={styles.closing}>
+              <AppText variant="cardTitle">Reflected</AppText>
+              <AppText variant="secondary">
+                You already reported how this activity went.
+              </AppText>
+            </Card>
+          ) : (
+            <Card style={styles.closing}>
+              <AppText variant="cardTitle">How did it go?</AppText>
+              <AppText variant="secondary">
+                A short reflection helps the next activity fit a little better.
+              </AppText>
+              <AppButton
+                label="Reflect on this Win"
+                onPress={() => router.push('/reflect')}
+              />
+            </Card>
+          )}
+          <LearningEngineDebugCard engine={dailyWin.learning_engine} />
+        </Animated.View>
+      ) : null}
+    </>
   );
 }
 
-function SegmentCard({
-  index,
-  segment,
-}: {
-  index: number;
-  segment: DailyWinSegment;
-}) {
+function SegmentBlock({ segment }: { segment: DailyWinSegment }) {
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>
-        {index}. {segment.type}
-      </Text>
-      <Text style={styles.goalName}>{segment.title}</Text>
-      <Text style={styles.meta}>About {segment.minutes} minutes</Text>
+    <View style={styles.segment}>
+      <PhaseBadge type={segment.type} />
+      <GeneratedText variant="emphasized" style={styles.segmentTitle}>
+        {segment.title}
+      </GeneratedText>
+      <AppText variant="caption">About {segment.minutes} minutes</AppText>
       {segment.steps.map((step) => (
-        <Text key={step} style={styles.listItem}>
+        <GeneratedText key={step} style={styles.listItem}>
           {step}
-        </Text>
+        </GeneratedText>
       ))}
-      <Text style={[styles.note, styles.parentRole]}>
+      <AppText variant="secondary" style={styles.parentRole}>
         Parent role: {segment.parent_role}
-      </Text>
+      </AppText>
     </View>
   );
 }
 
-function Section({
-  title,
-  children,
+function BriefBlock({ label, text }: { label: string; text: string }) {
+  return (
+    <View style={styles.briefItem}>
+      <SectionLabel style={styles.briefLabel}>{label}</SectionLabel>
+      <GeneratedText>{text}</GeneratedText>
+    </View>
+  );
+}
+
+function LearningEngineDebugCard({
+  engine,
 }: {
-  title: string;
-  children: ReactNode;
+  engine: LearningEngineDebug | null | undefined;
 }) {
+  const [open, setOpen] = useState(false);
+  if (!__DEV__ || !engine) {
+    return null;
+  }
+  const blob = JSON.stringify(engine);
+  if (blob.includes('"id"') || /[0-9a-f]{8}-[0-9a-f]{4}-/.test(blob)) {
+    return null;
+  }
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {children}
-    </View>
+    <Card tone="soft" style={styles.engineCard}>
+      <TextButton
+        label={open ? 'Hide learning engine' : 'Learning engine'}
+        onPress={() => setOpen((value) => !value)}
+      />
+      {open ? (
+        <View style={styles.engineBody}>
+          <AppText variant="caption">Development only. Not shown in production.</AppText>
+          <EngineRow label="Target" value={engine.target} />
+          <EngineRow label="Mode" value={engine.mode} />
+          <EngineRow label="Difficulty" value={engine.difficulty} />
+          <EngineRow label="Scaffold" value={engine.scaffold} />
+          <EngineRow label="Why" value={engine.why.join('\n')} />
+          <EngineRow label="Assessment" value={engine.assessment} />
+          <EngineRow label="Policy" value={engine.policy} />
+        </View>
+      ) : null}
+    </Card>
   );
 }
 
-function LabelBlock({ label, text }: { label: string; text: string }) {
+function EngineRow({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <Text style={styles.body}>{text}</Text>
+    <View style={styles.engineRow}>
+      <SectionLabel style={styles.briefLabel}>{label}</SectionLabel>
+      <AppText variant="body">{value}</AppText>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F4F1EB',
-  },
-  scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 12,
-    paddingBottom: 40,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 28,
-  },
-  brand: {
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    color: '#6F6A64',
-  },
-  title: {
-    marginTop: 10,
-    fontSize: 28,
-    lineHeight: 34,
-    fontWeight: '700',
-    color: '#1C1917',
-  },
   meta: {
-    marginTop: 6,
-    fontSize: 16,
-    color: '#6F6A64',
+    marginTop: space.xs,
   },
-  statusTitle: {
-    marginTop: 16,
-    fontSize: 24,
-    fontWeight: '600',
-    color: '#1C1917',
-  },
-  statusBody: {
-    marginTop: 10,
-    fontSize: 16,
-    lineHeight: 24,
-    color: '#6F6A64',
-  },
-  section: {
-    marginTop: 28,
-    padding: 20,
-    borderRadius: 18,
-    backgroundColor: '#FFFcf7',
-    borderWidth: 1,
-    borderColor: '#E6E0D6',
-  },
-  sectionTitle: {
-    marginBottom: 14,
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    color: '#6F6A64',
-  },
-  body: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: '#1C1917',
-  },
-  listItem: {
-    marginTop: 8,
-    fontSize: 16,
-    lineHeight: 24,
-    color: '#1C1917',
-  },
-  field: {
-    marginBottom: 14,
-  },
-  fieldLabel: {
-    marginBottom: 6,
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1C1917',
-  },
-  note: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#4A4541',
-  },
-  parentRole: {
-    marginTop: 12,
-  },
-  goalName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1C1917',
-  },
-  button: {
-    alignSelf: 'flex-start',
-    marginTop: 24,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    backgroundColor: '#2C4A3E',
-  },
-  buttonLabel: {
-    color: '#F8F6F1',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  pressed: {
-    opacity: 0.88,
-  },
-  comingCard: {
-    marginTop: 28,
-    padding: 20,
-    borderRadius: 18,
-    backgroundColor: '#EAE4DA',
-  },
-  comingTitle: {
-    marginBottom: 8,
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1C1917',
+  objective: {
+    marginTop: space.sm,
   },
   changeCard: {
-    marginTop: 20,
-    padding: 20,
-    borderRadius: 18,
-    backgroundColor: '#2C4A3E',
+    marginTop: space.xl,
   },
-  changeEyebrow: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    color: '#C5D4CC',
+  changeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: space.sm,
+  },
+  changeLabel: {
+    marginTop: 0,
+    marginBottom: 0,
   },
   changeBody: {
-    marginTop: 8,
-    fontSize: 17,
-    lineHeight: 24,
-    fontWeight: '600',
-    color: '#F8F6F1',
+    color: colors.textPrimary,
+  },
+  briefing: {
+    marginTop: space.xl,
+    gap: space.sm,
+  },
+  briefIntro: {
+    marginBottom: space.xs,
+  },
+  briefItem: {
+    paddingTop: space.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.borderSubtle,
+    gap: 4,
+  },
+  briefLabel: {
+    marginTop: 0,
+    marginBottom: 4,
+  },
+  materials: {
+    marginTop: space.lg,
+  },
+  segment: {
+    marginTop: space.xl,
+    paddingTop: space.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.borderSubtle,
+    gap: 6,
+  },
+  segmentTitle: {
+    marginTop: 4,
+  },
+  listItem: {
+    marginTop: 4,
+  },
+  parentRole: {
+    marginTop: space.sm,
+  },
+  adaptBlock: {
+    marginTop: space.xl,
+    gap: space.sm,
+  },
+  checkBlock: {
+    marginTop: space.xl,
+    paddingTop: space.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.borderSubtle,
+    gap: space.sm,
+  },
+  engineCard: {
+    marginTop: space.xl,
+  },
+  engineBody: {
+    marginTop: space.md,
+    gap: space.sm,
+  },
+  engineRow: {
+    gap: 4,
+  },
+  closing: {
+    marginTop: space.xl,
   },
 });

@@ -41,6 +41,7 @@ from daily_win_api.domains.learning.models import (
     Skill,
 )
 from daily_win_api.main import create_app
+from tests.demo_client import DemoClient
 
 CONTINUED_PAYLOAD = DailyWinFeedbackCreate(
     difficulty="about_right",
@@ -75,9 +76,7 @@ def _count_for_child(session, model) -> int:
 
 def test_reset_removes_derived_demo_data_and_preserves_seed(demo_db) -> None:
     generate_demo_daily_win(demo_db, FakeModelGateway())
-    win = demo_db.scalars(
-        select(DailyWin).order_by(DailyWin.created_at.desc())
-    ).first()
+    win = demo_db.scalars(select(DailyWin).order_by(DailyWin.created_at.desc())).first()
     assert win is not None
     submit_demo_feedback(demo_db, win.id, CONTINUED_PAYLOAD)
 
@@ -131,8 +130,7 @@ def test_reset_removes_derived_demo_data_and_preserves_seed(demo_db) -> None:
     ).all()
     assert goals_after == goals_before
     goal_codes = [
-        demo_db.get(Skill, skill_id).code
-        for _priority, skill_id in goals_after
+        demo_db.get(Skill, skill_id).code for _priority, skill_id in goals_after
     ]
     assert goal_codes == list(HAYES_GOAL_CODES)
     assert demo_db.scalar(select(func.count()).select_from(Skill)) == skill_count_before
@@ -159,20 +157,28 @@ def test_reset_route_absent_in_production() -> None:
 
 
 def test_reset_http_returns_simple_success(demo_db) -> None:
-    generate_demo_daily_win(demo_db, FakeModelGateway())
     application = _development_app(demo_db, FakeModelGateway())
-    client = TestClient(application)
+    client = DemoClient(application)
+    client.setup_hayes()
+    created = client.post("/api/v1/demo/daily-wins/generate")
+    assert created.status_code == 200
     response = client.post("/api/v1/demo/reset")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json()["status"] == "ok"
     assert "household_id" not in response.json()
-    assert _count_for_child(demo_db, DailyWin) == 0
+    latest = client.get("/api/v1/demo/daily-wins/latest")
+    assert latest.status_code == 404
 
 
 def test_home_states_none_pending_and_reflected(demo_db) -> None:
     application = _development_app(demo_db, FakeModelGateway())
-    client = TestClient(application)
+    client = DemoClient(application)
 
+    missing = client.get("/api/v1/demo/daily-wins/latest")
+    assert missing.status_code == 409
+    assert missing.json()["error_code"] == "setup_required"
+
+    client.setup_hayes()
     missing = client.get("/api/v1/demo/daily-wins/latest")
     assert missing.status_code == 404
 

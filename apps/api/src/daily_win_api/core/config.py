@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     ai_provider: str = "openai"
     openai_model: str = DEFAULT_OPENAI_MODEL
     openai_api_key: str | None = None
+    content_moderation_enabled: bool = False
 
     @property
     def demo_routes_enabled(self) -> bool:

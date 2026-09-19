@@ -61,6 +61,31 @@ class DemoChildProfileRead(BaseModel):
     child: DemoChildSummary
     baseline: DemoBaselineSummary
     goals: list[DemoGoalSummary]
+    tester_fingerprint: str | None = None
+
+
+class DemoSessionRead(BaseModel):
+    status: str
+    profile_source: str | None = None
+    tester_fingerprint: str
+    profile: DemoChildProfileRead | None = None
+
+
+class DemoOnboardingCatalog(BaseModel):
+    grades: list[dict[str, str]]
+    interest_suggestions: list[str]
+    strength_suggestions: list[str]
+    difficulty_suggestions: list[str]
+    response_options: list[str]
+    motivator_suggestions: list[str]
+    durations: list[int]
+    goals: list[dict[str, str]]
+    min_goals: int
+    max_goals: int
+    max_interests: int
+    max_strengths: int
+    max_difficulties: int
+    max_motivators: int
 
 
 class ChildBaselineCreate(BaseModel):

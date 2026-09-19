@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import (
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -60,6 +61,12 @@ class DailyWin(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         child_household_foreign_key("fk_daily_wins_child_household"),
         household_child_index("ix_daily_wins_household_child"),
         id_child_household_unique("uq_daily_wins_id_child_household"),
+        Index(
+            "ix_daily_wins_household_child_created",
+            "household_id",
+            "child_id",
+            "created_at",
+        ),
     )
 
     household_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
@@ -82,6 +89,12 @@ class DailyWin(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     content: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     content_schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
+    instruction_plan_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("instruction_plans.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
 
 class DailyWinFeedback(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
@@ -105,6 +118,9 @@ class DailyWinFeedback(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     setback_response: Mapped[str] = mapped_column(String(32), nullable=False)
     what_helped: Mapped[str | None] = mapped_column(Text, nullable=True)
     additional_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    academic_result: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    correct_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    attempted_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     submitted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )

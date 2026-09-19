@@ -6,7 +6,11 @@ from openai import RateLimitError
 from daily_win_api.ai.exceptions import ModelGatewayError
 from daily_win_api.ai.providers.fake import valid_daily_win_draft
 from daily_win_api.ai.providers.openai import OpenAIModelGateway, map_openai_exception
-from daily_win_api.ai.schemas import DailyWinModelContext, ParentReportedBaselineContext
+from daily_win_api.ai.schemas import (
+    DailyWinModelContext,
+    InstructionPlanContext,
+    ParentReportedBaselineContext,
+)
 
 
 def test_openai_provider_requests_set_store_false() -> None:
@@ -82,12 +86,29 @@ def _synthetic_context() -> DailyWinModelContext:
             response_to_difficulty=None,
             preferred_activity_minutes=20,
         ),
-        active_goals=[],
-        primary_goal_skill_code="growth.persistence",
-        learner_skill_states=[],
-        recent_learning_events=[],
-        recent_daily_wins=[],
-        allowed_skill_codes=["growth.persistence"],
+        instruction_plan=InstructionPlanContext(
+            primary_skill_code="writing.sentences.complete_sentence",
+            supporting_skill_code=None,
+            selection_reason_codes=["parent_priority"],
+            instruction_mode="practice",
+            intended_difficulty="similar",
+            scaffold_level="one_prompt",
+            prerequisite_rationale="None.",
+            assessment_objective="Produce one complete sentence.",
+            assessment_probe={
+                "target_skill_code": "writing.sentences.complete_sentence"
+            },
+            desired_evidence="structured academic result plus parent observation",
+            growth_target_code="growth.persistence",
+            duration_minutes=20,
+            policy_version="instruction_policy_v1",
+        ),
+        bounded_evidence_summaries=[],
+        recent_themes=[],
+        allowed_skill_codes=[
+            "writing.sentences.complete_sentence",
+            "growth.persistence",
+        ],
         allowed_materials=["PAPER"],
     )
 
@@ -118,4 +139,3 @@ class _RaisingClient:
 
     def parse(self, **kwargs):
         raise self._error
-
