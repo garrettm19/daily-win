@@ -61,7 +61,7 @@ def test_bakeoff_cases_match_current_planner() -> None:
         "case_2_age6_phonics": ("reading.phonics.blend_cvc", "introduce"),
         "case_3_age7_writing_org": (
             "writing.sentences.complete_sentence",
-            "introduce",
+            "practice",
         ),
         "case_4_age8_diagnostic_math": ("math.addition.within_10", "diagnostic"),
         "case_5_age9_comprehension": (

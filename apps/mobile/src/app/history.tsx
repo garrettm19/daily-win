@@ -10,6 +10,7 @@ import {
   type ApiErrorKind,
 } from '@/lib/api/parentErrors';
 import type { DemoDailyWinSummary } from '@/lib/api/types';
+import { formatFriendlyDate } from '@/lib/productCopy';
 import { colors, space } from '@/theme';
 import { AppText } from '@/ui/AppText';
 import { EmptyState } from '@/ui/EmptyState';
@@ -62,7 +63,11 @@ export default function HistoryScreen() {
         />
       ) : null}
       {items && items.length === 0 ? (
-        <EmptyState title={EMPTY_COPY.history} icon="time-outline" />
+          <EmptyState
+            title="No Daily Wins yet"
+            body={EMPTY_COPY.history}
+            icon="time-outline"
+          />
       ) : null}
       {items?.map((item) => (
         <Pressable
@@ -75,11 +80,11 @@ export default function HistoryScreen() {
           style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
           <AppText variant="bodyEmphasized">{item.title}</AppText>
           <AppText variant="caption" style={styles.meta}>
-            {new Date(item.created_at).toLocaleDateString()} • {item.primary_focus}
+            {formatFriendlyDate(item.created_at)} · {item.primary_focus}
           </AppText>
           <View style={styles.badges}>
             <StatusBadge
-              label={item.has_feedback ? 'Completed' : 'Reflection pending'}
+              label={item.has_feedback ? 'Reflection saved' : 'Reflection pending'}
               tone={item.has_feedback ? 'success' : 'pending'}
             />
             {item.is_adaptive ? <StatusBadge label="Adapted" tone="adapted" /> : null}

@@ -28,7 +28,7 @@ export function ErrorCallout({
       </AppText>
       <DevError code={errorCode} kind={errorKind} />
       {onRetry ? (
-        <AppButton label="Retry" variant="secondary" onPress={onRetry} />
+        <AppButton label="Try again" variant="secondary" onPress={onRetry} />
       ) : null}
       {children}
     </View>

@@ -8,6 +8,7 @@ from daily_win_api.domains.learning.enums import (
     ScaffoldLevel,
 )
 from daily_win_api.domains.learning.taxonomy import (
+    definition_by_code,
     is_academic_code,
     is_growth_or_life_code,
 )
@@ -48,6 +49,13 @@ _REASON_LABEL = {
     "age_grade_appropriate": "Age/grade appropriate",
     "progression_next": "Next skill in the sequence",
     "diagnostic_check": "Short independent check",
+    "grade_band_prior": "Starting near reported grade level",
+    "placement_diagnostic": "Placement diagnostic",
+    "foundation_review": "Foundation review",
+    "placement_step_down": "Stepped down after weak diagnostic",
+    "discovery_cycle": "Discovery week first signal",
+    "consecutive_focus_limit": "Rotated after consecutive focus",
+    "secondary_goal_starvation_guard": "Secondary goal needed a turn",
 }
 
 _SCAFFOLD_LABEL = {
@@ -208,6 +216,41 @@ def difficulty_debug_label(academic_band: str | None) -> str:
         return academic_band.replace("_", " ").capitalize()
 
 
+def placement_debug_label(
+    reason_codes: list[str] | tuple[str, ...], instruction_mode: str
+) -> str:
+    reasons = set(reason_codes)
+    if "foundation_review" in reasons or "placement_step_down" in reasons:
+        return "Foundation review"
+    if (
+        "placement_diagnostic" in reasons
+        or instruction_mode == InstructionMode.DIAGNOSTIC.value
+    ):
+        return "Diagnostic"
+    return mode_label(instruction_mode)
+
+
+def evidence_debug_label(
+    academic_band: str | None, reason_codes: list[str] | tuple[str, ...]
+) -> str:
+    if "placement_diagnostic" in set(reason_codes) or academic_band in {
+        None,
+        "",
+        AcademicBand.NOT_OBSERVED.value,
+    }:
+        return "None yet"
+    return difficulty_debug_label(academic_band)
+
+
+def selected_goal_label(primary_skill_code: str, primary_display_name: str) -> str:
+    catalog = definition_by_code()
+    item = catalog.get(primary_skill_code, {})
+    parent = str(item.get("parent_code") or "")
+    if parent and parent in catalog:
+        return str(catalog[parent]["display_name"])
+    return primary_display_name
+
+
 def what_changed_today(
     *,
     has_prior_wins: bool,
@@ -225,9 +268,7 @@ def what_changed_today(
         "regression_review" in reasons
         or instruction_mode == InstructionMode.REMEDIATION.value
     ):
-        return (
-            f"We're revisiting {skill} after the last activity needed more support."
-        )
+        return "We're making this one more supported today."
     if "review_spacing" in reasons or instruction_mode == InstructionMode.REVIEW.value:
         return f"We're trying {skill} again after some time has passed."
     if "prerequisite_evidence_missing" in reasons:
@@ -237,8 +278,7 @@ def what_changed_today(
         or instruction_mode == InstructionMode.DIAGNOSTIC.value
     ):
         return (
-            f"We're doing a short independent check of {skill} "
-            "before longer practice."
+            f"We're doing a short independent check of {skill} before longer practice."
         )
     if scaffold == ScaffoldLevel.MEDIUM.value:
         return f"We're practicing {skill} again, but with a little less help this time."

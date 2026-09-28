@@ -85,6 +85,14 @@ def test_prerequisites_have_no_cycles() -> None:
     assert prerequisites_for("writing.spelling.high_frequency") == (
         "reading.phonics.blend_cvc",
     )
+    assert prerequisites_for("writing.spelling.cvc") == ("reading.phonics.blend_cvc",)
+    assert prerequisites_for("writing.spelling.patterns") == ("writing.spelling.cvc",)
+    assert prerequisites_for("writing.spelling.endings_suffixes") == (
+        "writing.spelling.patterns",
+    )
+    assert prerequisites_for("writing.spelling.multisyllabic_irregular") == (
+        "writing.spelling.endings_suffixes",
+    )
     assert prerequisites_for("math.fractions.halves_fourths") == ()
 
 
@@ -234,9 +242,9 @@ def test_planner_is_deterministic_and_explains_why() -> None:
         )
     )
     assert first == second
-    assert first.primary_skill_code == "writing.sentences.complete_sentence"
+    assert first.primary_skill_code == "writing.organization.sequence_events"
     assert "parent_priority" in first.selection_reason_codes
-    assert first.policy_version == "instruction_policy_v2"
+    assert first.policy_version == "instruction_policy_v4"
     assert first.assessment_probe["target_skill_code"] == first.primary_skill_code
 
 
@@ -257,7 +265,7 @@ def test_engagement_cannot_override_instructional_objective() -> None:
         )
     )
     assert soccer.primary_skill_code == space.primary_skill_code
-    assert soccer.primary_skill_code == "math.addition.within_10"
+    assert soccer.primary_skill_code == "math.addition.within_20"
     assert soccer.engagement_theme_constraints[0] == "soccer"
     assert space.engagement_theme_constraints[0] == "space"
 
@@ -267,7 +275,21 @@ def test_planner_reviews_missing_prerequisite() -> None:
         _planner(
             goals=(GoalPriority("math.addition.within_20", 1),),
             states={
-                "math.number_sense.counting": _retained("math.number_sense.counting")
+                "math.number_sense.counting": _retained("math.number_sense.counting"),
+                "math.addition.within_10": PlannerSkillState(
+                    "math.addition.within_10",
+                    AcademicStateSnapshot(
+                        band=AcademicBand.EMERGING,
+                        algorithm_version=ACADEMIC_PROJECTOR_V1,
+                        usable_evidence_count=1,
+                        distinct_session_count=1,
+                        last_practiced_at=NOW,
+                        last_independent_success_at=None,
+                        evidence_ids=(),
+                        summary="weak",
+                        needs_remediation=False,
+                    ),
+                ),
             },
         )
     )
@@ -279,16 +301,14 @@ def test_older_learner_unobserved_skill_is_diagnostic() -> None:
     plan = plan_instruction(
         _planner(
             goals=(GoalPriority("math.addition", 1),),
-            states={
-                "math.number_sense.counting": _retained("math.number_sense.counting")
-            },
             age=9,
         )
     )
-    assert plan.primary_skill_code == "math.addition.within_10"
+    assert plan.primary_skill_code == "math.addition.word_problems"
     assert plan.instruction_mode is InstructionMode.DIAGNOSTIC
     assert "diagnostic_check" in plan.selection_reason_codes
     assert plan.academic_band == AcademicBand.NOT_OBSERVED.value
+    assert "math.number_sense.counting" != plan.primary_skill_code
 
 
 def test_planner_schedules_remediation_after_regression() -> None:

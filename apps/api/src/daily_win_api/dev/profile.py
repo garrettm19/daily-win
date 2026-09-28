@@ -273,6 +273,11 @@ def update_demo_profile(
         goal_codes=data.goal_codes,
         goal_id_for_code=lambda code: session_goal_id(tenant.session_hash, code),
     )
+    from daily_win_api.domains.daily_wins.preparation import (
+        invalidate_unused_prepared_wins,
+    )
+
+    invalidate_unused_prepared_wins(session, child)
     session.flush()
     return load_demo_child_profile(
         session, child, tester_fingerprint=tenant.tester_fingerprint

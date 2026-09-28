@@ -27,6 +27,7 @@ Daily Win is a **modular monolith**: one backend, one mobile app, one PostgreSQL
     - learner-state reconstruction
     - future provider replacement
 13. **Do not introduce unnecessary infrastructure** such as Kubernetes, Kafka, Redis, vector databases, or microservices unless a demonstrated future requirement justifies them.
+14. **The LLM creates the experience. Daily Win decides the learning.** InstructionScheduler chooses today's academic slot. InstructionPlanner owns the instructional objective. CoachProtocol (`coach_protocol_v1`) owns adult coaching. WeeklyLearningSummary is rebuildable from evidence. Prompt files v1–v4 stay immutable; current renderer is v5.
 
 ## Memory architecture
 
@@ -52,7 +53,7 @@ Generated Daily Win        (LLM renders the experience from the plan)
 
 Inferences must store (or reference) the evidence IDs they were based on, plus enough model/prompt version metadata to reproduce or audit the decision later. Instructional “why” is stored as reason codes, not chain-of-thought.
 
-See [learner-model.md](learner-model.md), [curriculum.md](curriculum.md), [instruction-policy.md](instruction-policy.md), [decision-intelligence.md](decision-intelligence.md), and [ai-architecture.md](ai-architecture.md).
+See [learner-model.md](learner-model.md), [curriculum.md](curriculum.md), [instruction-policy.md](instruction-policy.md), [decision-intelligence.md](decision-intelligence.md), [ai-architecture.md](ai-architecture.md), [learning-engine-observability.md](learning-engine-observability.md), and [longitudinal-simulation.md](longitudinal-simulation.md).
 
 ## Tenancy model
 
@@ -102,7 +103,7 @@ Current tables:
 
 `learning_events.evidence_kind` distinguishes **FACT**, **MEASUREMENT**, **OBSERVATION**, and **INFERENCE**. `source` records who reported it (for example PARENT, SYSTEM, ASSESSMENT, AI). Corrections use `supersedes_event_id` rather than mutating history. `learner_skill_state` is not the ledger and must not be treated as canonical memory.
 
-Parent feedback is stored as `daily_win_feedback` and converted by application code into canonical `learning_events` (a completion observation, a persistence observation, and an optional academic MEASUREMENT when `academic_result` is present). `learner_skill_state` is rebuilt by deterministic projectors (`trend_projector_v1` for persistence; `academic_projector_v1` for academic skills). `InstructionPlanner` (`instruction_policy_v2`) selects the next skill, scaffold, and assessment probe **before** generation. The current generator prompt is `daily_win_generator_v5`; historical prompt versions remain frozen in source. Optional `DecisionGateway` may verify the rendered draft; it is not required and is not a live Jev dependency.
+Parent feedback is stored as `daily_win_feedback` and converted by application code into canonical `learning_events` (a completion observation, a persistence observation, and an optional academic MEASUREMENT when `academic_result` is present). `learner_skill_state` is rebuilt by deterministic projectors (`trend_projector_v1` for persistence; `academic_projector_v1` for academic skills). `InstructionScheduler` (`instruction_scheduler_v1`) chooses today's academic goal; `InstructionPlanner` (`instruction_policy_v4`, with frozen `instruction_policy_v3` fixtures) plus `PlacementPolicy` (`placement_policy_v1`) select the next skill, scaffold, and assessment probe **before** generation. Age/grade is a starting prior only; evidence determines level. The current generator prompt is `daily_win_generator_v5`; historical prompt versions remain frozen in source. Optional `DecisionGateway` may verify the rendered draft; it is not required and is not a live Jev dependency.
 
 `learning_events` may carry nullable `daily_win_id` and `daily_win_feedback_id` for lineage. `daily_win_feedback` is owned by the same household, child, and Daily Win through a composite foreign key, and V0.1 allows one submission per Daily Win.
 
@@ -112,7 +113,7 @@ Demo routes are registered only when `APP_ENV` is a development environment (`lo
 
 A demo session may be **new** (household exists, no child yet) or **ready** (synthetic child/profile exists). `GET /api/v1/demo/session` reports that status. `POST /api/v1/demo/setup/hayes` seeds the known Hayes profile. `POST /api/v1/demo/setup/profile` accepts a bounded synthetic payload (`extra="forbid"`). `PATCH /api/v1/demo/profile` inserts a new latest baseline and updates active goals.
 
-`GET /api/v1/demo/child-profile`, generate/latest/feedback, `GET /api/v1/demo/progress`, `GET /api/v1/demo/daily-wins`, and `GET /api/v1/demo/daily-wins/{daily_win_id}` require a configured child. Foreign or unknown Daily Win IDs return the same 404. Generation goes through ModelGateway; the mobile app never holds a provider key.
+`GET /api/v1/demo/child-profile`, generate/latest/feedback, `GET /api/v1/demo/next-win-state`, `GET /api/v1/demo/progress`, `GET /api/v1/demo/daily-wins`, and `GET /api/v1/demo/daily-wins/{daily_win_id}` require a configured child. Foreign or unknown Daily Win IDs return the same 404. Generation goes through ModelGateway; the mobile app never holds a provider key. Home loads READY Wins from `next-win-state` without an OpenAI call. After reflection, `NextWinPreparation` may generate the next Win in-process via FastAPI BackgroundTasks; that runner is replaceable and is not educational logic. See [docs/generation-latency.md](generation-latency.md).
 
 `POST /api/v1/demo/reset` and `POST /api/v1/demo/reset/activity` clear that session's Daily Wins, feedback, events, learner state, lineage, and AI runs while keeping the synthetic child/profile. `POST /api/v1/demo/reset/session` also removes that session's child/profile and returns first-run. Neither endpoint touches other sessions. Local command `uv --directory apps/api run python -m daily_win_api.dev.reset` wipes HTTP demo sessions back to first-run and restores the legacy in-process Hayes row used by tests.
 
@@ -138,6 +139,7 @@ Expo app  --HTTP-->  FastAPI API  -->  ModelGateway  -->  model provider
 - The mobile app talks only to the Daily Win API. It must not include provider SDKs or API keys.
 - The API performs tenancy authorization, safety checks, persistence, and schema validation.
 - `ModelGateway` is the only module that speaks to a **generative** LLM provider. Application code asks it for typed results; it does not scatter provider calls across features.
+- Generation delivery (`BACKGROUND_PREP` vs `INTERACTIVE_WAIT`) is selected behind this boundary. Endpoints do not set `service_tier`. Background prep uses Terra medium/default; interactive wait uses Terra medium and requests Fast mode. Educational pipeline is otherwise identical.
 - Optional typed judgments use `DecisionGateway` (Fake in tests; no live Jev). That path is not required for generation.
 - Provider replacement should require changing the gateway implementation, not rewriting product workflows.
 - Prompts, model identifiers, instruction-policy version, and projector versions are recorded so generations remain auditable.

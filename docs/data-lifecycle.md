@@ -145,7 +145,7 @@ Hayes seed currently stores the motivator phrase `doing activities with a caregi
 
 | | |
 | --- | --- |
-| Source | `InstructionPlanner` (`instruction_policy_v2`). |
+| Source | `InstructionScheduler` (`instruction_scheduler_v1`), `InstructionPlanner` (`instruction_policy_v4`), and `PlacementPolicy` (`placement_policy_v1`). |
 | Stored | Yes |
 | Where | `instruction_plans`: household/child, `primary_skill_id`, mode, scaffold, `reason_codes`, versioned `plan` JSONB. |
 | Why | Answer “why did Daily Win choose this?” without storing chain-of-thought. |
@@ -203,7 +203,7 @@ Hayes seed currently stores the motivator phrase `doing activities with a caregi
 | --- | --- |
 | Source | Generation attempt. |
 | Stored | Yes |
-| Where | `ai_runs`: household/child IDs, operation, provider, model, prompt/schema versions, status, context_manifest (IDs), provider_request_id, token counts, latency, sanitized error_code, timestamps. |
+| Where | `ai_runs`: household/child IDs, operation, provider, model, prompt/schema versions, status, context_manifest (IDs plus development latency/trigger/fingerprint fields; not prompt text), provider_request_id, token counts, latency, sanitized error_code, timestamps. |
 | Why | Provenance and cost/debug without storing child narrative or completions. |
 | Sent to OpenAI | No |
 | Logged | Exception class on failure; not the manifest. |

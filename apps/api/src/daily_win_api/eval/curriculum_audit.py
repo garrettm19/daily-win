@@ -30,12 +30,13 @@ REMAINING_UNCERTAINTY = (
     "Oral fluency is one 6–8 word familiar sentence, not a passage WCPM score.",
     "Simple inference uses 1–2 sentences; it is not multi-paragraph reasoning.",
     "Equal groups is 2–3 groups of ≤5 objects, not times-table fluency.",
-    "Halves/fourths identifies already-split shares; not independent "
-    "partitioning.",
+    "Halves/fourths identifies already-split shares; not independent partitioning.",
     "Context clues is one spoken sentence, not dictionary or paragraph clues.",
-    "High-frequency spelling is one 2–4 letter word, not a sight-word inventory.",
+    "High-frequency spelling is a legacy leaf; new plans use the four-level "
+    "spelling progression (CVC → patterns → endings → longer/irregular).",
     "Word problems are oral 'how many in all' stories with totals of 10 or less.",
-    "Age/grade never fabricates mastery; diagnostic only shortens the first check.",
+    "Age/grade is a starting prior for placement diagnostics, not mastery. "
+    "Unknown prerequisites are not treated as weakness.",
 )
 
 

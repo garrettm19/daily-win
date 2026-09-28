@@ -8,6 +8,14 @@ from daily_win_api.dev.reset import reset_demo_derived_data
 from daily_win_api.dev.seed import seed_development_data
 
 
+@pytest.fixture(autouse=True)
+def disable_background_pregenerate(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "daily_win_api.domains.daily_wins.jobs.BACKGROUND_PREGENERATE_ENABLED",
+        False,
+    )
+
+
 @pytest.fixture
 def db_session() -> Iterator[Session]:
     connection = engine.connect()

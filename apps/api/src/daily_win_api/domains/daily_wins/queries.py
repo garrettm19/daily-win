@@ -9,25 +9,43 @@ from daily_win_api.domains.children.models import Child
 from daily_win_api.domains.daily_wins.models import DailyWin, DailyWinFeedback
 from daily_win_api.domains.daily_wins.schemas import (
     DAILY_WIN_STATUS_READY,
+    BonusChallengeRead,
+    CoachCueRead,
     DemoDailyWinRead,
+    DiscoveryDomainRead,
+    DiscoveryWeekRead,
     LearningEngineDebugRead,
     ParentAssessmentRead,
+    ResultSnapshotRead,
+    SmartReflectionRead,
+)
+from daily_win_api.domains.learning.coach_language import GUIDE_ONBOARDING
+from daily_win_api.domains.learning.coach_protocol import protocol_from_dict
+from daily_win_api.domains.learning.discovery import (
+    DISCOVERY_BODY,
+    DISCOVERY_HEADLINE,
+    discovery_domain_status,
+    discovery_is_active,
 )
 from daily_win_api.domains.learning.models import InstructionPlanRecord, Skill
 from daily_win_api.domains.learning.presentation import (
     asks_about_setback,
     difficulty_debug_label,
     domain_label,
+    evidence_debug_label,
     is_academic_probe,
     mode_label,
+    placement_debug_label,
     probe_asks_for_counts,
     reason_labels,
     scaffold_label,
+    selected_goal_label,
     shortened_task,
     success_looks_like,
     what_changed_today,
     what_to_check,
 )
+from daily_win_api.domains.learning.smart_reflection import smart_reflection_fields
 from daily_win_api.domains.learning.support import REFLECTION_CAPTION
 from daily_win_api.domains.learning.taxonomy import is_academic_code
 
@@ -80,6 +98,11 @@ def to_demo_daily_win_read(
 ) -> DemoDailyWinRead:
     plan_row = _plan_row(session, daily_win)
     probe = _probe_from_plan(plan_row)
+    payload = (
+        plan_row.plan
+        if plan_row is not None and isinstance(plan_row.plan, dict)
+        else {}
+    )
     academic = is_academic_probe(probe, primary_skill.code)
     assessment = None
     learning_engine = None
@@ -107,8 +130,7 @@ def to_demo_daily_win_read(
         academic_band = payload.get("academic_band")
         learning_engine = LearningEngineDebugRead(
             target=(
-                f"{domain_label(primary_skill.domain)} — "
-                f"{primary_skill.display_name}"
+                f"{domain_label(primary_skill.domain)} — {primary_skill.display_name}"
             ),
             mode=mode_label(plan_row.instruction_mode),
             difficulty=difficulty_debug_label(
@@ -120,6 +142,21 @@ def to_demo_daily_win_read(
                 str((probe or {}).get("observable_task") or primary_skill.display_name)
             ),
             policy=plan_row.policy_version,
+            selected_goal=selected_goal_label(
+                primary_skill.code, primary_skill.display_name
+            ),
+            expected_entry=(
+                str(payload["placement_entry_label"])
+                if payload.get("placement_entry_label")
+                else None
+            ),
+            evidence=evidence_debug_label(
+                str(academic_band) if academic_band else None, reason_list
+            ),
+            placement=placement_debug_label(reason_list, plan_row.instruction_mode),
+            placement_why=(
+                str(payload["placement_why"]) if payload.get("placement_why") else None
+            ),
         )
         changed = what_changed_today(
             has_prior_wins=_has_prior_wins(session, daily_win),
@@ -133,6 +170,49 @@ def to_demo_daily_win_read(
                 else None
             ),
         )
+    protocol = protocol_from_dict(
+        payload["coach_protocol"]
+        if isinstance(payload.get("coach_protocol"), dict)
+        else None
+    )
+    coach_card = list(protocol.coach_card) if protocol else []
+    cues = (
+        [CoachCueRead(label=cue.label, text=cue.text) for cue in protocol.cues]
+        if protocol
+        else []
+    )
+    bonus = None
+    raw_bonus = payload.get("bonus_challenge")
+    if isinstance(raw_bonus, dict) and raw_bonus.get("code"):
+        bonus = BonusChallengeRead(
+            code=str(raw_bonus.get("code") or ""),
+            category=str(raw_bonus.get("category") or ""),
+            title=str(raw_bonus.get("title") or ""),
+            minutes=int(raw_bonus.get("minutes") or 5),
+            prompt=str(raw_bonus.get("prompt") or ""),
+            safety=str(raw_bonus.get("safety") or ""),
+            personal_best=bool(raw_bonus.get("personal_best")),
+            optional=bool(raw_bonus.get("optional", True)),
+            counts_as_mastery=bool(raw_bonus.get("counts_as_mastery", False)),
+        )
+    smart = None
+    if plan_row is not None:
+        fields = smart_reflection_fields(
+            instruction_mode=plan_row.instruction_mode,
+            skill_code=primary_skill.code,
+            asks_about_setback=setback,
+            teach_the_coach=bool(payload.get("teach_the_coach")),
+        )
+        smart = SmartReflectionRead(
+            questions=list(fields["questions"]),
+            notice_chips=list(fields["notice_chips"]),
+            strategy_options=list(fields["strategy_options"]),
+            self_correction_options=list(fields["self_correction_options"]),
+            effort_options=list(fields["effort_options"]),
+            bonus_engagement_options=list(fields["bonus_engagement_options"]),
+        )
+    discovery = _discovery_read(session, daily_win, payload)
+    onboarding = None if _has_prior_wins(session, daily_win) else list(GUIDE_ONBOARDING)
     return DemoDailyWinRead(
         id=daily_win.id,
         child_nickname=child_nickname,
@@ -148,6 +228,65 @@ def to_demo_daily_win_read(
         asks_about_setback=setback,
         what_changed_today=changed,
         learning_engine=learning_engine,
+        coach_card=coach_card,
+        coach_cues=cues,
+        wait_guidance=protocol.wait_guidance if protocol else None,
+        bonus_challenge=bonus,
+        smart_reflection=smart,
+        discovery=discovery,
+        guide_onboarding=onboarding,
+        teach_the_coach=bool(payload.get("teach_the_coach")),
+        protocol_version=protocol.protocol_version if protocol else None,
+        one_thing_to_improve=protocol.one_thing_to_improve if protocol else None,
+        result_snapshot=_result_snapshot(session, daily_win.id),
+    )
+
+
+def _discovery_read(
+    session: Session, daily_win: DailyWin, payload: dict[str, object]
+) -> DiscoveryWeekRead | None:
+    from daily_win_api.domains.children.models import Child
+    from daily_win_api.domains.learning.models import ChildGoal
+
+    child = session.get(Child, daily_win.child_id)
+    if child is None:
+        return None
+    goals = session.execute(
+        select(ChildGoal, Skill)
+        .join(Skill, Skill.id == ChildGoal.skill_id)
+        .where(
+            ChildGoal.child_id == child.id,
+            ChildGoal.household_id == child.household_id,
+            ChildGoal.active.is_(True),
+        )
+    ).all()
+    goal_codes = tuple(skill.code for _goal, skill in goals)
+    sampled: list[str] = []
+    prior = session.execute(
+        select(DailyWin, Skill)
+        .join(Skill, Skill.id == DailyWin.primary_skill_id)
+        .where(
+            DailyWin.child_id == daily_win.child_id,
+            DailyWin.household_id == daily_win.household_id,
+            DailyWin.status == DAILY_WIN_STATUS_READY,
+        )
+    ).all()
+    for _win, skill in prior:
+        if is_academic_code(skill.code):
+            sampled.append(skill.code.split(".", 1)[0].title())
+    active = bool(payload.get("discovery_cycle")) or discovery_is_active(
+        goal_codes, {}
+    )
+    if not active and not sampled:
+        return None
+    domains = discovery_domain_status(goal_codes, tuple(sampled))
+    if not domains:
+        return None
+    return DiscoveryWeekRead(
+        active=active or any(item["status"] == "still_to_explore" for item in domains),
+        headline=DISCOVERY_HEADLINE,
+        body=DISCOVERY_BODY,
+        domains=[DiscoveryDomainRead(**item) for item in domains],
     )
 
 
@@ -185,6 +324,21 @@ def _feedback_exists(session: Session, daily_win_id: UUID) -> bool:
             )
         )
         is not None
+    )
+
+
+def _result_snapshot(session: Session, daily_win_id: UUID) -> ResultSnapshotRead | None:
+    feedback = session.scalar(
+        select(DailyWinFeedback).where(DailyWinFeedback.daily_win_id == daily_win_id)
+    )
+    if feedback is None:
+        return None
+    return ResultSnapshotRead(
+        difficulty=feedback.difficulty,
+        academic_result=feedback.academic_result,
+        setback_response=feedback.setback_response,
+        completion=feedback.completion,
+        engagement=feedback.engagement,
     )
 
 

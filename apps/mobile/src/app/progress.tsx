@@ -11,13 +11,25 @@ import {
   type ApiErrorKind,
 } from '@/lib/api/parentErrors';
 import type { DemoAcademicProgress, DemoGoalProgress, DemoProgress } from '@/lib/api/types';
-import { colors, space } from '@/theme';
+import {
+  formatCheckDate,
+  independenceFromResult,
+  independenceLabel,
+  independencePoints,
+  independenceTrendCopy,
+  nextMoveCopy,
+  stageFromProgress,
+} from '@/lib/competency';
+import { hasVisibleText } from '@/lib/productCopy';
+import { space } from '@/theme';
 import { AppText } from '@/ui/AppText';
 import { EmptyState } from '@/ui/EmptyState';
 import { ErrorCallout } from '@/ui/ErrorCallout';
+import { IndependenceTrend } from '@/ui/IndependenceTrend';
+import { ProgressStage } from '@/ui/ProgressStage';
 import { Screen } from '@/ui/Screen';
 import { ScreenLoading } from '@/ui/ScreenLoading';
-import { SectionLabel } from '@/ui/SectionLabel';
+import { SkillCard } from '@/ui/SkillCard';
 import { TextButton } from '@/ui/TextButton';
 
 export default function ProgressScreen() {
@@ -27,6 +39,7 @@ export default function ProgressScreen() {
   const [errorKind, setErrorKind] = useState<ApiErrorKind | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [openSkill, setOpenSkill] = useState<string | null>(null);
 
   const load = useCallback(() => {
     void fetchDemoProgress()
@@ -37,7 +50,7 @@ export default function ProgressScreen() {
         setErrorCode(null);
       })
       .catch((caught: unknown) => {
-        const described = describeCaughtError(caught, PARENT_ERRORS.load);
+        const described = describeCaughtError(caught, PARENT_ERRORS.progress);
         setError(described.message);
         setErrorKind(described.kind);
         setErrorCode(described.code);
@@ -52,11 +65,13 @@ export default function ProgressScreen() {
   );
 
   const empty = progress !== null && progressHasNoEvidence(progress);
+  const skills = progress?.academic_skills ?? [];
+  const growth = progress?.growth_skills ?? progress?.goals ?? [];
 
   return (
     <Screen>
-      <AppText variant="screenTitle">What Daily Win is learning</AppText>
-      {loading && !progress ? <ScreenLoading title="Loading progress" /> : null}
+      <AppText variant="screenTitle">Progress</AppText>
+      {loading && !progress ? <ScreenLoading title="Loading progress..." /> : null}
       {error ? (
         <ErrorCallout
           message={error}
@@ -72,40 +87,38 @@ export default function ProgressScreen() {
           icon="leaf-outline"
         />
       ) : null}
-      {progress && (progress.academic_skills?.length ?? 0) > 0 ? (
+      {skills.length > 0 ? (
         <View style={styles.section}>
-          <SectionLabel>Academic skills</SectionLabel>
-          {progress.academic_skills?.map((skill) => (
-            <AcademicSkillBlock key={`${skill.domain_label}-${skill.skill_name}`} skill={skill} />
-          ))}
-          {progress.state_guide?.map((item) => (
-            <AppText key={item.label} variant="caption" style={styles.guide}>
-              {item.label}: {item.explanation}
-            </AppText>
-          ))}
-          {progress.evidence_disclaimer ? (
-            <AppText variant="caption" style={styles.disclaimer}>
-              {progress.evidence_disclaimer}
-            </AppText>
-          ) : null}
+          <AppText variant="sectionLabel">Skills</AppText>
+          <View style={styles.cards}>
+            {skills.map((skill) => {
+              const key = `${skill.domain_label}-${skill.skill_name}`;
+              const points = independencePoints(skill);
+              return (
+                <SkillCard
+                  key={key}
+                  skill={skill}
+                  points={points}
+                  nextMove={nextMoveCopy({ currentAdjustment: skill.supporting_copy })}
+                  onPress={() => setOpenSkill((current) => (current === key ? null : key))}
+                />
+              );
+            })}
+          </View>
+          {skills.map((skill) => {
+            const key = `${skill.domain_label}-${skill.skill_name}`;
+            if (openSkill !== key) {
+              return null;
+            }
+            return <SkillDetail key={`${key}-detail`} skill={skill} />;
+          })}
         </View>
       ) : null}
-      {progress && (progress.growth_skills ?? progress.goals).length > 0 ? (
+      {growth.length > 0 && !empty ? (
         <View style={styles.section}>
-          <SectionLabel>Growth skills</SectionLabel>
-          {(progress.growth_skills ?? progress.goals).map((goal) => (
+          <AppText variant="sectionLabel">Coaching</AppText>
+          {growth.map((goal) => (
             <GrowthSkillBlock key={goal.display_name} goal={goal} />
-          ))}
-        </View>
-      ) : null}
-      {progress && progress.recent_observations.length > 0 ? (
-        <View style={styles.obsBlock}>
-          <SectionLabel>Recent observations</SectionLabel>
-          {progress.recent_observations.map((item, index) => (
-            <View key={`${item.goal_name}-${index}`} style={styles.obs}>
-              <AppText variant="bodyEmphasized">{item.goal_name}</AppText>
-              <AppText variant="secondary">{item.summary}</AppText>
-            </View>
           ))}
         </View>
       ) : null}
@@ -117,77 +130,66 @@ export default function ProgressScreen() {
   );
 }
 
-function AcademicSkillBlock({ skill }: { skill: DemoAcademicProgress }) {
+function SkillDetail({ skill }: { skill: DemoAcademicProgress }) {
+  const points = independencePoints(skill);
+  const checks = [...(skill.recent_checks ?? [])].reverse();
   return (
-    <View style={styles.goalBlock}>
-      <AppText variant="caption">{skill.domain_label}</AppText>
+    <View style={styles.detail}>
       <AppText variant="cardTitle">{skill.skill_name}</AppText>
-      <AppText variant="bodyEmphasized">{skill.state_label}</AppText>
-      {skill.recent_evidence ? (
-        <>
-          <SectionLabel>Recent evidence</SectionLabel>
-          <AppText variant="body">{skill.recent_evidence}</AppText>
-        </>
+      <ProgressStage stage={stageFromProgress(skill)} />
+      {checks.length > 0 ? (
+        <View style={styles.checks}>
+          {checks.map((check) => {
+            const level = independenceFromResult(check.result);
+            return (
+              <AppText key={check.occurred_at} variant="secondary">
+                {formatCheckDate(check.occurred_at)}
+                {level ? ` · ${independenceLabel(level)}` : ''}
+              </AppText>
+            );
+          })}
+        </View>
+      ) : hasVisibleText(skill.recent_evidence) ? (
+        <AppText variant="secondary">{skill.recent_evidence}</AppText>
       ) : null}
-      <AppText variant="caption" style={styles.meta}>
-        Evidence: {skill.evidence_label}
-      </AppText>
-      <AppText variant="secondary">{skill.supporting_copy}</AppText>
+      <IndependenceTrend points={points} caption={independenceTrendCopy(points)} />
     </View>
   );
 }
 
 function GrowthSkillBlock({ goal }: { goal: DemoGoalProgress }) {
   return (
-    <View style={styles.goalBlock}>
-      <AppText variant="cardTitle">{goal.display_name}</AppText>
-      {goal.latest_observation ? (
-        <>
-          <SectionLabel>Latest observation</SectionLabel>
-          <AppText variant="body">{goal.latest_observation}</AppText>
-        </>
-      ) : null}
-      {goal.current_adjustment ? (
-        <>
-          <SectionLabel>Current adjustment</SectionLabel>
-          <AppText variant="body">{goal.current_adjustment}</AppText>
-        </>
-      ) : null}
-      <AppText variant="caption" style={styles.meta}>
-        {goal.evidence_label}
-      </AppText>
-      {goal.still_learning && goal.still_learning_message ? (
-        <AppText variant="secondary">{goal.still_learning_message}</AppText>
-      ) : null}
+    <View style={styles.growth}>
+      <AppText variant="bodyEmphasized">{goal.display_name}</AppText>
+      {goal.latest_observation && !goal.still_learning ? (
+        <AppText variant="secondary">{goal.latest_observation}</AppText>
+      ) : (
+        <AppText variant="caption">Still gathering evidence</AppText>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   section: {
-    marginTop: space.md,
-  },
-  goalBlock: {
     marginTop: space.xl,
-    gap: 6,
+    gap: space.sm,
+  },
+  cards: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space.sm,
+  },
+  detail: {
+    marginTop: space.md,
+    gap: space.xs,
     paddingBottom: space.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.borderSubtle,
   },
-  meta: {
-    marginTop: 4,
+  checks: {
+    gap: space.xxs,
   },
-  obsBlock: {
-    marginTop: space.xl,
-    gap: space.md,
-  },
-  obs: {
-    gap: 4,
-  },
-  guide: {
-    marginTop: space.sm,
-  },
-  disclaimer: {
-    marginTop: space.md,
+  growth: {
+    gap: space.xxs,
+    paddingBottom: space.md,
   },
 });

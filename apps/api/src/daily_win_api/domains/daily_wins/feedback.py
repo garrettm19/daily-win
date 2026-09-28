@@ -27,7 +27,20 @@ from daily_win_api.domains.learning.enums import (
     EvidenceSource,
 )
 from daily_win_api.domains.learning.events import append_learning_event
-from daily_win_api.domains.learning.models import LearnerSkillState, Skill
+from daily_win_api.domains.learning.models import (
+    InstructionPlanRecord,
+    LearnerSkillState,
+    Skill,
+)
+from daily_win_api.domains.learning.observations import (
+    OBSERVATION_BONUS_ENGAGEMENT,
+    OBSERVATION_EFFORT,
+    OBSERVATION_NON_TARGET,
+    OBSERVATION_NOTICE,
+    OBSERVATION_SELF_CORRECTION,
+    OBSERVATION_STRATEGY,
+    observation_payload,
+)
 from daily_win_api.domains.learning.presentation import (
     academic_next_copy,
     academic_observation,
@@ -189,6 +202,16 @@ def submit_demo_feedback(
             ),
         )
 
+    _append_optional_observations(
+        session,
+        resolved=resolved,
+        daily_win=daily_win,
+        feedback=feedback,
+        data=data,
+        now=now,
+        primary_skill=primary_skill,
+    )
+
     rebuild_child_learner_states(
         session,
         household_id=resolved.household_id,
@@ -248,6 +271,89 @@ def feedback_exists_for_win(session: Session, daily_win_id: UUID) -> bool:
     )
 
 
+def _append_optional_observations(
+    session: Session,
+    *,
+    resolved: Child,
+    daily_win: DailyWin,
+    feedback: DailyWinFeedback,
+    data: DailyWinFeedbackCreate,
+    now: datetime,
+    primary_skill: Skill | None,
+) -> None:
+    pairs: list[tuple[str, str, dict[str, object] | None]] = []
+    if data.self_correction:
+        pairs.append(
+            (
+                OBSERVATION_SELF_CORRECTION,
+                data.self_correction,
+                {"not_first_attempt_correct": True},
+            )
+        )
+    if data.strategy_observed:
+        pairs.append((OBSERVATION_STRATEGY, data.strategy_observed, None))
+    if data.performance_effort:
+        pairs.append((OBSERVATION_EFFORT, data.performance_effort, None))
+    if data.bonus_engagement:
+        extra: dict[str, object] = {"counts_as_mastery": False}
+        category = _bonus_category_for_win(session, daily_win)
+        if category:
+            extra["category"] = category
+        pairs.append(
+            (
+                OBSERVATION_BONUS_ENGAGEMENT,
+                data.bonus_engagement,
+                extra,
+            )
+        )
+    if data.non_target_error:
+        pairs.append(
+            (
+                OBSERVATION_NON_TARGET,
+                data.non_target_error,
+                {"does_not_create_mastery": True},
+            )
+        )
+    for observation_type, value, extra in pairs:
+        append_learning_event(
+            session,
+            LearningEventCreate(
+                household_id=resolved.household_id,
+                child_id=resolved.id,
+                skill_id=primary_skill.id if primary_skill is not None else None,
+                evidence_kind=EvidenceKind.OBSERVATION,
+                source=EvidenceSource.PARENT,
+                event_type=EVENT_TYPE_SKILL_OBSERVATION,
+                occurred_at=now,
+                payload=observation_payload(observation_type, value, extra=extra),
+                daily_win_id=daily_win.id,
+                daily_win_feedback_id=feedback.id,
+            ),
+        )
+    if data.notice_chips:
+        append_learning_event(
+            session,
+            LearningEventCreate(
+                household_id=resolved.household_id,
+                child_id=resolved.id,
+                skill_id=None,
+                evidence_kind=EvidenceKind.OBSERVATION,
+                source=EvidenceSource.PARENT,
+                event_type=EVENT_TYPE_SKILL_OBSERVATION,
+                occurred_at=now,
+                payload={
+                    "observation_type": OBSERVATION_NOTICE,
+                    "chips": list(data.notice_chips),
+                    "reporting_kind": "parent_reported",
+                    "epistemic_kind": "OBSERVATION",
+                    "free_text_is_not_truth": True,
+                },
+                daily_win_id=daily_win.id,
+                daily_win_feedback_id=feedback.id,
+            ),
+        )
+
+
 def _validated_academic(
     data: DailyWinFeedbackCreate, *, probe: dict[str, object] | None
 ) -> tuple[AcademicResult | None, int | None, int | None]:
@@ -300,6 +406,19 @@ def _academic_insight(
         academic_next_copy(academic_result, needs_remediation=needs, band=band),
         first,
     )
+
+
+def _bonus_category_for_win(session: Session, daily_win: DailyWin) -> str | None:
+    if daily_win.instruction_plan_id is None:
+        return None
+    plan_row = session.get(InstructionPlanRecord, daily_win.instruction_plan_id)
+    if plan_row is None or not isinstance(plan_row.plan, dict):
+        return None
+    bonus = plan_row.plan.get("bonus_challenge")
+    if not isinstance(bonus, dict):
+        return None
+    category = bonus.get("category")
+    return str(category) if category else None
 
 
 def _optional_text(value: str | None) -> str | None:

@@ -38,7 +38,7 @@ def test_context_builder_loads_engagement_profile_and_instruction_plan(
     assert context.parent_reported_baseline.grade == "1"
     assert (
         context.instruction_plan.primary_skill_code
-        == "writing.sentences.complete_sentence"
+        == "writing.organization.sequence_events"
     )
     assert "parent_priority" in context.instruction_plan.selection_reason_codes
     assert context.instruction_plan.growth_target_code == "growth.persistence"

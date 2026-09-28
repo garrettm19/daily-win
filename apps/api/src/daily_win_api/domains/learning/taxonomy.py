@@ -1,8 +1,10 @@
 from daily_win_api.domains.learning.enums import SkillDomain, SkillKind, SkillStateMode
 
-TAXONOMY_VERSION = "curriculum_v1"
-# Empty on purpose: every current academic leaf has a construct-specific probe.
-UNSUPPORTED_FOR_GENERATION: frozenset[str] = frozenset()
+TAXONOMY_VERSION = "curriculum_v2"
+# Legacy leaf kept for historical plans/evidence. Not a current generation target.
+UNSUPPORTED_FOR_GENERATION: frozenset[str] = frozenset(
+    {"writing.spelling.high_frequency"}
+)
 
 
 def _strand(
@@ -345,18 +347,72 @@ SKILL_DEFINITIONS: tuple[dict[str, object], ...] = (
         state_mode=SkillStateMode.MASTERY,
     ),
     _skill(
+        "writing.spelling.cvc",
+        "writing.spelling",
+        SkillDomain.WRITING,
+        "spelling",
+        "CVC spelling",
+        "Spell a short consonant-vowel-consonant word from dictation.",
+        position=1,
+        grade_min=5,
+        grade_max=7,
+        outcome="Child independently spells one CVC word such as cat, sun, or map.",
+    ),
+    _skill(
+        "writing.spelling.patterns",
+        "writing.spelling",
+        SkillDomain.WRITING,
+        "spelling",
+        "Common spelling patterns",
+        "Spell a familiar short-vowel or vowel-team pattern word.",
+        position=2,
+        grade_min=6,
+        grade_max=8,
+        outcome=(
+            "Child independently spells one common pattern word such as rain or boat."
+        ),
+    ),
+    _skill(
+        "writing.spelling.endings_suffixes",
+        "writing.spelling",
+        SkillDomain.WRITING,
+        "spelling",
+        "Endings and suffixes",
+        "Spell a familiar word with a common ending such as -ed, -ing, or -s.",
+        position=3,
+        grade_min=7,
+        grade_max=9,
+        outcome=(
+            "Child independently spells one inflected word such as jumped or playing."
+        ),
+    ),
+    _skill(
+        "writing.spelling.multisyllabic_irregular",
+        "writing.spelling",
+        SkillDomain.WRITING,
+        "spelling",
+        "Longer and irregular words",
+        "Spell a grade-appropriate irregular or two-syllable word.",
+        position=4,
+        grade_min=8,
+        grade_max=9,
+        outcome=(
+            "Child independently spells one irregular or longer word such as "
+            "because or friend."
+        ),
+    ),
+    _skill(
         "writing.spelling.high_frequency",
         "writing.spelling",
         SkillDomain.WRITING,
         "spelling",
-        "High-frequency words",
-        "Spell one familiar 2–4 letter high-frequency word.",
-        position=1,
+        "High-frequency words (legacy)",
+        "Legacy V0.3 leaf. Historical evidence only; not used for new plans.",
+        position=5,
         grade_min=5,
         grade_max=8,
         outcome=(
-            "Child independently spells one familiar 2–4 letter high-frequency "
-            "word."
+            "Child independently spells one familiar 2–4 letter high-frequency word."
         ),
     ),
     _strand(
@@ -491,3 +547,15 @@ def is_growth_or_life_code(code: str) -> bool:
 
 def is_generation_supported(code: str) -> bool:
     return code not in UNSUPPORTED_FOR_GENERATION
+
+
+def strand_code_for(code: str) -> str:
+    """Map a leaf skill to its academic/growth strand (parent goal code)."""
+    item = definition_by_code().get(code)
+    if item is None:
+        parts = code.split(".")
+        return ".".join(parts[:2]) if len(parts) >= 2 else code
+    parent = item.get("parent_code")
+    if isinstance(parent, str) and parent:
+        return parent
+    return code

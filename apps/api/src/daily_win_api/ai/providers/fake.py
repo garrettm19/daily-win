@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from daily_win_api.ai.delivery import GenerationDelivery
 from daily_win_api.ai.prompts.current import PROMPT_VERSION
 from daily_win_api.ai.schemas import (
     Adaptations,
@@ -155,6 +158,8 @@ class FakeModelGateway:
         adaptive_draft: DailyWinDraft | None = None,
         *,
         align_to_plan: bool = True,
+        reasoning_effort: str | None = None,
+        service_tier: str | None = None,
     ) -> None:
         self.draft = draft or valid_daily_win_draft()
         self.adaptive_draft = adaptive_draft
@@ -162,7 +167,21 @@ class FakeModelGateway:
         self.provider = provider
         self.model = model
         self.align_to_plan = align_to_plan
+        self.reasoning_effort = reasoning_effort
+        self.service_tier = service_tier
+        self.returned_service_tier: str | None = None
+        self.generation_intent: str | None = None
         self.calls: list[DailyWinModelContext] = []
+
+    def bind_delivery(self, delivery: GenerationDelivery) -> FakeModelGateway:
+        self.reasoning_effort = delivery.reasoning_effort
+        self.service_tier = delivery.requested_service_tier
+        self.generation_intent = delivery.intent
+        if delivery.requested_service_tier == "fast":
+            self.returned_service_tier = "priority"
+        else:
+            self.returned_service_tier = delivery.requested_service_tier
+        return self
 
     def generate_daily_win(
         self, context: DailyWinModelContext
@@ -180,6 +199,7 @@ class FakeModelGateway:
             draft = self.adaptive_draft
         if self.align_to_plan:
             draft = _align_draft_to_plan(draft, context)
+        returned = self.returned_service_tier or self.service_tier
         return DailyWinGenerationResult(
             draft=draft,
             provider=self.provider,
@@ -190,6 +210,10 @@ class FakeModelGateway:
             output_tokens=22,
             total_tokens=33,
             latency_ms=5,
+            reasoning_effort=self.reasoning_effort,
+            service_tier=returned,
+            requested_service_tier=self.service_tier,
+            generation_intent=self.generation_intent,
         )
 
 

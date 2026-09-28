@@ -132,10 +132,10 @@ def test_v4_win_exposes_parent_assessment_not_codes(demo_db) -> None:
     assert "id" not in engine
     assert str(child.id) not in str(engine)
     assert child.id.hex not in str(engine)
-    assert "instruction_policy_v2" in engine["policy"]
+    assert "instruction_policy_v4" in engine["policy"]
     assert read.content.observation_focus
     assert "Writing" in read.learning_engine.target
-    assert read.primary_skill_code == "writing.sentences.complete_sentence"
+    assert read.primary_skill_code == "writing.organization.sequence_events"
 
 
 def test_academic_result_creates_separate_measurement_and_observation(demo_db) -> None:
@@ -154,14 +154,16 @@ def test_academic_result_creates_separate_measurement_and_observation(demo_db) -
     measurements = list(
         demo_db.scalars(
             select(LearningEvent).where(
-                LearningEvent.event_type == EVENT_TYPE_SKILL_ASSESSMENT
+                LearningEvent.event_type == EVENT_TYPE_SKILL_ASSESSMENT,
+                LearningEvent.daily_win_id == generated.id,
             )
         )
     )
     observations = list(
         demo_db.scalars(
             select(LearningEvent).where(
-                LearningEvent.event_type == EVENT_TYPE_SKILL_OBSERVATION
+                LearningEvent.event_type == EVENT_TYPE_SKILL_OBSERVATION,
+                LearningEvent.daily_win_id == generated.id,
             )
         )
     )
@@ -202,14 +204,18 @@ def test_legacy_win_feedback_does_not_create_academic_measurement(demo_db) -> No
     measurements = list(
         demo_db.scalars(
             select(LearningEvent).where(
-                LearningEvent.event_type == EVENT_TYPE_SKILL_ASSESSMENT
+                LearningEvent.event_type == EVENT_TYPE_SKILL_ASSESSMENT,
+                LearningEvent.child_id == child.id,
+                LearningEvent.daily_win_id == win.id,
             )
         )
     )
     observations = list(
         demo_db.scalars(
             select(LearningEvent).where(
-                LearningEvent.event_type == EVENT_TYPE_SKILL_OBSERVATION
+                LearningEvent.event_type == EVENT_TYPE_SKILL_OBSERVATION,
+                LearningEvent.child_id == child.id,
+                LearningEvent.daily_win_id == win.id,
             )
         )
     )
@@ -256,7 +262,8 @@ def test_counts_rejected_when_incomplete_and_ignored_for_qualitative(demo_db) ->
     )
     event = demo_db.scalar(
         select(LearningEvent).where(
-            LearningEvent.event_type == EVENT_TYPE_SKILL_ASSESSMENT
+            LearningEvent.event_type == EVENT_TYPE_SKILL_ASSESSMENT,
+            LearningEvent.daily_win_id == generated.id,
         )
     )
     assert event is not None
@@ -291,7 +298,8 @@ def test_counted_probe_persists_valid_counts(demo_db) -> None:
     )
     event = demo_db.scalar(
         select(LearningEvent).where(
-            LearningEvent.event_type == EVENT_TYPE_SKILL_ASSESSMENT
+            LearningEvent.event_type == EVENT_TYPE_SKILL_ASSESSMENT,
+            LearningEvent.daily_win_id == generated.id,
         )
     )
     assert event is not None
@@ -450,15 +458,15 @@ def test_nova_four_session_academic_loop(demo_db) -> None:
         select(LearnerSkillState).where(
             LearnerSkillState.child_id == child.id,
             LearnerSkillState.skill_id
-            == skill_id_for_code("writing.sentences.complete_sentence"),
+            == skill_id_for_code("writing.organization.sequence_events"),
         )
     )
     assert state is not None
     assert state.state["band"] == AcademicBand.RETAINED.value
-    assert records[0]["target"] == "writing.sentences.complete_sentence"
+    assert records[0]["target"] == "writing.organization.topic_details"
     assert records[0]["mode"] == "diagnostic"
     assert records[0]["scaffold"] == "one_prompt"
-    assert records[2]["target"] == "writing.sentences.complete_sentence"
+    assert records[2]["target"] == "writing.organization.sequence_events"
     assert records[2]["mode"] == "practice"
     assert records[2]["scaffold"] == "one_prompt"
     progress = client.get("/api/v1/demo/progress").json()
@@ -508,7 +516,9 @@ def test_regression_uses_practice_round_copy(demo_db) -> None:
     assert "regressed" not in progress.academic_skills[0].state_label.lower()
     generate_demo_daily_win(demo_db, FakeModelGateway())
     plan = demo_db.scalars(
-        select(InstructionPlanRecord).order_by(InstructionPlanRecord.created_at.desc())
+        select(InstructionPlanRecord)
+        .where(InstructionPlanRecord.child_id == child.id)
+        .order_by(InstructionPlanRecord.created_at.desc())
     ).first()
     assert plan is not None
     assert plan.instruction_mode == "remediation"

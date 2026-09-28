@@ -89,9 +89,7 @@ def parse_review_markdown(markdown: str) -> list[dict[str, Any]]:
     return rows
 
 
-def summarize_human_review(
-    markdown: str, reveal: dict[str, Any]
-) -> dict[str, Any]:
+def summarize_human_review(markdown: str, reveal: dict[str, Any]) -> dict[str, Any]:
     parsed = parse_review_markdown(markdown)
     assignment = reveal.get("assignment") or {}
     completed = [row for row in parsed if row["complete"]]

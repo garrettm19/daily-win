@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Share, StyleSheet, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 
+import { useParentPilotView } from '@/hooks/useParentPilotView';
 import { clampText, TEXT_LIMITS } from '@/lib/textLimits';
 import { colors, radius, space } from '@/theme';
 import { AppButton } from '@/ui/AppButton';
@@ -18,6 +19,7 @@ const QUESTIONS = [
 
 export default function TestFeedbackScreen() {
   const router = useRouter();
+  const parentPilotView = useParentPilotView();
   const [answers, setAnswers] = useState({
     confused: '',
     useful: '',
@@ -54,6 +56,10 @@ export default function TestFeedbackScreen() {
         <AppButton label="Home" onPress={() => router.dismissTo('/')} />
       </Screen>
     );
+  }
+
+  if (parentPilotView) {
+    return <Redirect href="/" />;
   }
 
   return (

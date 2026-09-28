@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from daily_win_api.ai.providers.fake import valid_daily_win_draft
 from daily_win_api.ai.schemas import DailyWinDraft, InstructionPlanContext
 from daily_win_api.domains.daily_wins.renderer_contract import (
+    AGE_RESPECTFUL_FOUNDATION,
     DIAGNOSTIC_PROBE_BEFORE_TEACHING,
     FRESH_ASSESSMENT_ITEM,
     GROWTH_OVERLAY_DISCONNECTED,
@@ -409,5 +410,74 @@ def labelled_renderer_contract_cases() -> tuple[RendererContractCase, ...]:
             growth_plan,
             None,
             GROWTH_OVERLAY_DISCONNECTED,
+        ),
+        RendererContractCase(
+            "age_respectful_good_mission",
+            "good",
+            _draft(
+                learn_steps=[
+                    "Show one CVC word on a scorecard.",
+                    "Invite one independent encode.",
+                ],
+                learn_title="Mission check",
+                do_title="Field challenge",
+                do_steps=["Walk the hallway and tap three doorframes as checkpoints."],
+                observation="Whether the child encodes the CVC word independently.",
+                primary_skill_code="writing.spelling.cvc",
+            ).model_copy(
+                update={
+                    "title": "Scorecard mission",
+                    "parent_briefing": (
+                        valid_daily_win_draft().parent_briefing.model_copy(
+                            update={
+                                "purpose": "Check one CVC encoding.",
+                                "how_to_coach": "Wait. Offer one hint only if stuck.",
+                            }
+                        )
+                    ),
+                }
+            ),
+            _plan(
+                primary_skill_code="writing.spelling.cvc",
+                instruction_mode="foundation_review",
+                presentation_constraint="age_respectful_foundation",
+            ),
+            None,
+            None,
+        ),
+        RendererContractCase(
+            "age_respectful_bad_baby_animals",
+            "bad",
+            _draft(
+                learn_steps=[
+                    "Look at the baby animals.",
+                    "Good job, little reader!",
+                ],
+                learn_title="Little reader time",
+                observation="Whether the child sounds out a kindergarten word.",
+                primary_skill_code="writing.spelling.cvc",
+            ).model_copy(
+                update={
+                    "title": "Baby animal sounds",
+                    "parent_briefing": (
+                        valid_daily_win_draft().parent_briefing.model_copy(
+                            update={
+                                "purpose": (
+                                    "A kindergarten sounding-out game for "
+                                    "little readers."
+                                ),
+                                "how_to_coach": "Cheer like they are a toddler.",
+                            }
+                        )
+                    ),
+                }
+            ),
+            _plan(
+                primary_skill_code="writing.spelling.cvc",
+                instruction_mode="foundation_review",
+                presentation_constraint="age_respectful_foundation",
+            ),
+            AGE_RESPECTFUL_FOUNDATION,
+            None,
         ),
     )

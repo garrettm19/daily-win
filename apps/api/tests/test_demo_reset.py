@@ -75,8 +75,8 @@ def _count_for_child(session, model) -> int:
 
 
 def test_reset_removes_derived_demo_data_and_preserves_seed(demo_db) -> None:
-    generate_demo_daily_win(demo_db, FakeModelGateway())
-    win = demo_db.scalars(select(DailyWin).order_by(DailyWin.created_at.desc())).first()
+    generated = generate_demo_daily_win(demo_db, FakeModelGateway())
+    win = demo_db.get(DailyWin, generated.id)
     assert win is not None
     submit_demo_feedback(demo_db, win.id, CONTINUED_PAYLOAD)
 
@@ -105,7 +105,13 @@ def test_reset_removes_derived_demo_data_and_preserves_seed(demo_db) -> None:
     assert _count_for_child(demo_db, LearningEvent) == 0
     assert _count_for_child(demo_db, LearnerSkillState) == 0
     evidence = demo_db.scalar(
-        select(func.count()).select_from(LearnerSkillStateEvidence)
+        select(func.count())
+        .select_from(LearnerSkillStateEvidence)
+        .join(
+            LearnerSkillState,
+            LearnerSkillStateEvidence.learner_skill_state_id == LearnerSkillState.id,
+        )
+        .where(LearnerSkillState.child_id == DEMO_CHILD_ID)
     )
     assert evidence == 0
 

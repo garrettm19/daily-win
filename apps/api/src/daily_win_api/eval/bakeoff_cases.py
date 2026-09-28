@@ -24,7 +24,11 @@ _SPECS: tuple[tuple[str, str, str], ...] = (
         "age 7 writing organization",
         "writing_org_missing_sentence",
     ),
-    ("case_4_age8_diagnostic_math", "age 8 diagnostic math", "theme_soccer_same_skill"),
+    (
+        "case_4_age8_diagnostic_math",
+        "age 8 diagnostic math",
+        "growth_overlay_does_not_steal_skill",
+    ),
     (
         "case_5_age9_comprehension",
         "age 9 reading comprehension",

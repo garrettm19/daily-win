@@ -1,6 +1,7 @@
 from daily_win_api.ai.providers.fake import valid_daily_win_draft
 from daily_win_api.api.errors import generation_error_payload
 from daily_win_api.domains.daily_wins.renderer_contract import (
+    AGE_RESPECTFUL_FOUNDATION,
     DIAGNOSTIC_PROBE_BEFORE_TEACHING,
     FRESH_ASSESSMENT_ITEM,
     HARD_RULE_CODES,
@@ -23,7 +24,7 @@ from daily_win_api.eval.suites import run_quality_suite
 
 def test_labelled_blind_review_fixtures_match_expected_rules() -> None:
     cases = labelled_renderer_contract_cases()
-    assert len(cases) == 16
+    assert len(cases) == 18
     labels = {case.label for case in cases}
     assert labels == {"good", "bad"}
     ids = [case.id for case in cases]
@@ -88,6 +89,7 @@ def test_fresh_item_not_forced_on_qualitative_construct() -> None:
 
 def test_hard_rule_codes_are_stable() -> None:
     assert HARD_RULE_CODES == {
+        AGE_RESPECTFUL_FOUNDATION,
         THREE_CONCRETE_CUES,
         DIAGNOSTIC_PROBE_BEFORE_TEACHING,
         ONE_CANONICAL_ASSESSMENT,

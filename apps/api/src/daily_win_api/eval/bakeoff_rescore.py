@@ -157,9 +157,7 @@ def rescore_terra_luna_artifact(
 
 
 def _luna_case_5_note(case_rows: list[dict[str, Any]]) -> dict[str, Any]:
-    row = next(
-        item for item in case_rows if item["id"] == "case_5_age9_comprehension"
-    )
+    row = next(item for item in case_rows if item["id"] == "case_5_age9_comprehension")
     luna = row["outputs"][LUNA]
     return {
         "current_safety_ok": luna["deterministic_safety"],

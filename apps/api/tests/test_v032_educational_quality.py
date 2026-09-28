@@ -34,7 +34,7 @@ from daily_win_api.eval.support import SUPPORT_LEVELS
 
 def test_planner_golden_case_count_and_pass() -> None:
     cases = planner_golden_cases()
-    assert 40 <= len(cases) <= 80
+    assert 40 <= len(cases) <= 100
     errors = [item for case in cases for item in evaluate_planner_case(case)]
     assert errors == []
 
@@ -46,9 +46,9 @@ def test_planner_why_not_blocks_later_skills() -> None:
         "writing_org_missing_sentence": "writing.organization.sequence_events",
         "reading_inference_blocked": "reading.comprehension.simple_inference",
         "fluency_blocked_without_cvc": "reading.fluency.smooth_oral",
-        "spelling_blocked_without_cvc": "writing.spelling.high_frequency",
+        "spelling_blocked_without_cvc": "writing.spelling.multisyllabic_irregular",
         "equal_groups_blocked_without_addition": "math.multiplication.equal_groups",
-        "supporting_later_addition_blocked": "math.addition.within_10",
+        "supporting_later_addition_blocked": "math.addition.word_problems",
     }
     by_id = {case.id: case for case in planner_golden_cases()}
     for case_id, forbidden in blocked.items():
@@ -96,15 +96,16 @@ def test_probe_quality_rejects_affect_and_generic_fallback() -> None:
     assert by_id["bad_enjoy_story"].expected_valid is False
     assert by_id["bad_neat_writing"].expected_valid is False
     assert by_id["bad_generic_fallback"].expected_valid is False
-    assert probe_is_valid(
-        by_id["bad_enjoy_story"].skill_code, by_id["bad_enjoy_story"].probe
-    ) is False
+    assert (
+        probe_is_valid(
+            by_id["bad_enjoy_story"].skill_code, by_id["bad_enjoy_story"].probe
+        )
+        is False
+    )
     catalog = [
-        case
-        for case in labelled_probe_cases()
-        if case.id.startswith("catalog_")
+        case for case in labelled_probe_cases() if case.id.startswith("catalog_")
     ]
-    assert len(catalog) == 20
+    assert len(catalog) == 23
     assert all(case.expected_valid for case in catalog)
     assert all(probe_is_valid(case.skill_code, case.probe) for case in catalog)
 
@@ -141,8 +142,8 @@ def test_progress_copy_does_not_overclaim() -> None:
 
 def test_curriculum_audit_records_gaps_without_expanding_taxonomy() -> None:
     audit = audit_curriculum()
-    assert audit.version == "curriculum_v1"
-    assert len(audit.skills) == 20
+    assert audit.version == "curriculum_v2"
+    assert len(audit.skills) == 24
     assert audit.missing_prerequisite_edges == ()
     assert audit.skills_without_specific_probe == ()
     assert audit.missing_standard_refs == ()
@@ -198,14 +199,14 @@ def test_eval_cli_exposes_suite_and_model_flags() -> None:
 def test_offline_suites_pass_and_record_versions() -> None:
     report = run_offline_suites()
     assert report["all_passed"] is True
-    assert report["curriculum_version"] == "curriculum_v1"
-    assert report["instruction_policy_version"] == "instruction_policy_v2"
+    assert report["curriculum_version"] == "curriculum_v2"
+    assert report["instruction_policy_version"] == "instruction_policy_v4"
     assert report["projector_version"] == "academic_projector_v1"
     assert report["probe_catalog_version"] == "assessment_probe_v2"
-    assert 40 <= report["planner_case_count"] <= 80
+    assert 40 <= report["planner_case_count"] <= 100
     assert report["curriculum"]["skills_without_specific_probe"] == []
     assert report["curriculum_review"]
-    assert len(report["curriculum_review"]) == 20
+    assert len(report["curriculum_review"]) == 23
     assert "Not learner memory" in report["note"]
 
 
@@ -225,7 +226,7 @@ def test_curriculum_integrity_invariants() -> None:
 
 def test_curriculum_review_export_covers_each_academic_skill() -> None:
     sections = curriculum_review_sections()
-    assert len(sections) == 20
+    assert len(sections) == 23
     codes = {item["skill"] for item in sections}
     assert "math.addition.within_10" in codes
     assert "reading.comprehension.main_idea" in codes

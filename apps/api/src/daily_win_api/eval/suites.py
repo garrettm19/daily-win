@@ -12,6 +12,7 @@ from daily_win_api.domains.daily_wins.renderer_contract import (
 from daily_win_api.domains.learning.integrity import curriculum_integrity_errors
 from daily_win_api.domains.learning.planner import INSTRUCTION_POLICY_CURRENT
 from daily_win_api.domains.learning.probes import PROBE_CATALOG_VERSION
+from daily_win_api.eval.coaching import coaching_errors
 from daily_win_api.eval.curriculum_audit import audit_curriculum
 from daily_win_api.eval.decision_fixtures import (
     labelled_verification_cases,
@@ -21,8 +22,11 @@ from daily_win_api.eval.expert_report import (
     curriculum_review_markdown,
     curriculum_review_sections,
 )
+from daily_win_api.eval.latency import run_latency_suite
 from daily_win_api.eval.learner_cases import evaluate_learner_case, learner_state_cases
+from daily_win_api.eval.longitudinal import run_longitudinal_suite
 from daily_win_api.eval.planner_cases import evaluate_planner_case, planner_golden_cases
+from daily_win_api.eval.policy_regression import evaluate_policy_regression
 from daily_win_api.eval.probe_quality import evaluate_probe_case, labelled_probe_cases
 from daily_win_api.eval.progress_claims import overclaim_hits
 from daily_win_api.eval.renderer_contract_cases import labelled_renderer_contract_cases
@@ -35,6 +39,7 @@ from daily_win_api.eval.renderer_quality import (
     theme_variants_keep_instruction,
 )
 from daily_win_api.eval.scoring import write_results
+from daily_win_api.eval.terra_config import run_terra_config_offline_checks
 
 
 @dataclass(frozen=True)
@@ -130,7 +135,34 @@ def run_decision_suite() -> SuiteResult:
 
 def run_integrity_suite() -> SuiteResult:
     errors = curriculum_integrity_errors()
-    return SuiteResult("integrity", 1, len(errors), tuple(errors))
+    regression = evaluate_policy_regression()
+    errors.extend(regression)
+    return SuiteResult("integrity", 1 + len(regression) + 4, len(errors), tuple(errors))
+
+
+def run_longitudinal_eval_suite() -> SuiteResult:
+    payload = run_longitudinal_suite(write_report=True)
+    errors: list[str] = []
+    if not payload["interest_invariant"]:
+        errors.append("interest change altered instructional state")
+    if payload["step_down"]["dumped_to_kindergarten"]:
+        errors.append("age-9 spelling dumped to kindergarten on first Win")
+    for item in payload["anomalies"]:
+        if item["severity"] == "CRITICAL":
+            errors.append(f"{item['archetype']} {item['code']}: {item['detail']}")
+    total = 4 + len(payload["histories"])
+    return SuiteResult("longitudinal", total, len(errors), tuple(errors))
+
+
+def run_coaching_suite() -> SuiteResult:
+    errors = coaching_errors()
+    return SuiteResult("coaching", max(len(errors), 8), len(errors), tuple(errors))
+
+
+def run_latency_eval_suite() -> SuiteResult:
+    errors = run_latency_suite()
+    errors.extend(run_terra_config_offline_checks())
+    return SuiteResult("latency", max(len(errors), 8), len(errors), tuple(errors))
 
 
 SUITE_RUNNERS = {
@@ -140,6 +172,9 @@ SUITE_RUNNERS = {
     "quality": run_quality_suite,
     "decision": run_decision_suite,
     "integrity": run_integrity_suite,
+    "longitudinal": run_longitudinal_eval_suite,
+    "coaching": run_coaching_suite,
+    "latency": run_latency_eval_suite,
 }
 
 
@@ -151,6 +186,7 @@ def run_offline_suites() -> dict[str, Any]:
         "created_at": datetime.now(UTC).isoformat(),
         "curriculum_version": audit.version,
         "instruction_policy_version": INSTRUCTION_POLICY_CURRENT,
+        "placement_policy_version": "placement_policy_v1",
         "projector_version": "academic_projector_v1",
         "probe_catalog_version": PROBE_CATALOG_VERSION,
         "planner_case_count": len(planner_golden_cases()),

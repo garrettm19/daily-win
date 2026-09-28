@@ -62,6 +62,8 @@ def test_demo_seed_is_idempotent(db_session) -> None:
     assert len(goals) == len(HAYES_GOAL_CODES)
 
     derived_state_count = db_session.scalar(
-        select(func.count()).select_from(LearnerSkillState)
+        select(func.count())
+        .select_from(LearnerSkillState)
+        .where(LearnerSkillState.child_id == DEMO_CHILD_ID)
     )
     assert derived_state_count == 0

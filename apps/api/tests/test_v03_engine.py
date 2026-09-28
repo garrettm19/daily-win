@@ -76,19 +76,25 @@ def test_max_retries_then_reject(demo_db) -> None:
 
 
 def test_optional_verifier_does_not_write_canonical_state(demo_db) -> None:
-    before_events = demo_db.scalar(select(LearningEvent.id).limit(1))
+    child = get_demo_child(demo_db)
+    assert child is not None
+    before_events = demo_db.scalar(
+        select(LearningEvent.id).where(LearningEvent.child_id == child.id).limit(1)
+    )
     gateway = FakeModelGateway()
     generate_demo_daily_win(
         demo_db, gateway, decision_gateway=FakeDecisionGateway(mutate_plan=True)
     )
-    runs = list(demo_db.scalars(select(DecisionRun)))
+    runs = list(
+        demo_db.scalars(select(DecisionRun).where(DecisionRun.child_id == child.id))
+    )
     assert runs
     assert runs[0].provider == "fake-decision"
-    events = list(demo_db.scalars(select(LearningEvent)))
+    events = list(
+        demo_db.scalars(select(LearningEvent).where(LearningEvent.child_id == child.id))
+    )
     if before_events is None:
         assert events == []
-    child = get_demo_child(demo_db)
-    assert child is not None
     states = list(
         demo_db.scalars(
             select(LearnerSkillState).where(LearnerSkillState.child_id == child.id)
@@ -118,7 +124,8 @@ def test_academic_measurement_rebuilds_and_is_not_free_text(demo_db) -> None:
     measurements = list(
         demo_db.scalars(
             select(LearningEvent).where(
-                LearningEvent.event_type == EVENT_TYPE_SKILL_ASSESSMENT
+                LearningEvent.event_type == EVENT_TYPE_SKILL_ASSESSMENT,
+                LearningEvent.daily_win_id == generated.id,
             )
         )
     )
@@ -195,14 +202,16 @@ def test_old_daily_win_content_schema_still_readable(demo_db) -> None:
     demo_db.flush()
     loaded = DailyWinDraft.model_validate(win.content)
     assert loaded.title == draft.title
-    assert INPUT_SCHEMA_VERSION == "4"
+    assert INPUT_SCHEMA_VERSION == "5"
 
 
 def test_no_peer_percentile_path() -> None:
-    from daily_win_api.domains.learning import academic, planner, projector
+    from daily_win_api.domains.learning import academic, placement, planner, projector
 
-    blob = f"{academic.__file__}{planner.__file__}{projector.__file__}"
-    for module in (academic, planner, projector):
+    blob = (
+        f"{academic.__file__}{planner.__file__}{projector.__file__}{placement.__file__}"
+    )
+    for module in (academic, planner, projector, placement):
         source = module.__file__
         assert source is not None
         text = open(source, encoding="utf-8").read()

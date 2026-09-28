@@ -10,7 +10,9 @@ export type ParentErrorContext =
   | 'saveReflection'
   | 'generate'
   | 'unavailable'
-  | 'setup';
+  | 'setup'
+  | 'progress'
+  | 'weekly';
 
 export const DEMO_SESSION_ERROR_CODE = 'demo_session_unavailable';
 
@@ -18,17 +20,20 @@ export const PARENT_ERRORS = {
   load: "Couldn't load Daily Win. Try again.",
   saveProfile: "Couldn't save your changes. Nothing was lost.",
   saveReflection: "Couldn't save the reflection. Your answers are still here.",
-  generate: "Daily Win couldn't be created. Try again.",
-  unavailable: "Daily Win isn't connected right now.",
-  unavailableHint: 'Make sure the demo server is running, then try again.',
+  generate: "Couldn't prepare today's Win. Try again.",
+  unavailable: "Can't reach Daily Win right now. Check the connection and try again.",
+  unavailableHint: 'Check the connection, then try again.',
   setup: "Couldn't save your changes. Nothing was lost.",
   demoSession: "Couldn't start this demo session. Try again.",
+  progress: "Couldn't load Progress. Your Daily Wins are safe.",
+  weekly: "Couldn't load the Weekly Coach Report. Your Daily Wins are safe.",
 } as const;
 
 export const EMPTY_COPY = {
   progress:
-    'Complete a Daily Win and reflection to start building a picture of what works.',
-  history: 'No Daily Wins yet.',
+    'Complete a Daily Win and a short reflection to start a picture of what works.',
+  history: 'No Daily Wins yet. Start today’s Win from Home.',
+  weekly: 'No completed Wins this week yet.',
 } as const;
 
 export function diagnosticLabel(kind: ApiErrorKind | null | undefined): string | null {

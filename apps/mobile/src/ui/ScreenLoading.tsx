@@ -8,7 +8,7 @@ import { AppText } from '@/ui/AppText';
 const SUPPORTING = [
   "Using this child's goals",
   'Considering recent reflections',
-  "Building today's activity",
+  "Getting today's Win ready",
 ];
 
 export function ScreenLoading({

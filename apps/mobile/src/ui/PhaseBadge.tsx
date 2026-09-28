@@ -22,13 +22,19 @@ const PHASE = {
   },
 };
 
-export function PhaseBadge({ type }: { type: 'LEARN' | 'DO' | 'GROW' }) {
+export function PhaseBadge({
+  type,
+  quiet = false,
+}: {
+  type: 'LEARN' | 'DO' | 'GROW';
+  quiet?: boolean;
+}) {
   const phase = PHASE[type];
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, quiet && styles.quiet]}>
       <View style={[styles.mark, { backgroundColor: phase.accent }]} />
-      <Icon name={phase.icon} size={16} color={phase.accent} />
-      <AppText variant="sectionLabel">{phase.label}</AppText>
+      <Icon name={phase.icon} size={quiet ? 14 : 16} color={phase.accent} />
+      <AppText variant={quiet ? 'caption' : 'sectionLabel'}>{phase.label}</AppText>
     </View>
   );
 }
@@ -43,5 +49,8 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: radius.chipPill,
+  },
+  quiet: {
+    opacity: 0.78,
   },
 });

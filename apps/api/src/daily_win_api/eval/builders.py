@@ -25,9 +25,7 @@ def snapshot(
     now: datetime = EVAL_NOW,
 ) -> AcademicStateSnapshot:
     practiced = (
-        None
-        if practiced_days_ago is None
-        else now - timedelta(days=practiced_days_ago)
+        None if practiced_days_ago is None else now - timedelta(days=practiced_days_ago)
     )
     independent = (
         None
@@ -85,6 +83,8 @@ def planner_input(
     states: tuple[PlannerSkillState, ...] = (),
     recent_skills: tuple[str, ...] = (),
     recent_themes: tuple[str, ...] = (),
+    recent_modes: tuple[str, ...] = (),
+    recent_goals: tuple[str, ...] = (),
     now: datetime = EVAL_NOW,
 ) -> PlannerInput:
     return PlannerInput(
@@ -99,6 +99,8 @@ def planner_input(
         recent_skill_codes=recent_skills,
         recent_themes=recent_themes,
         now=now,
+        recent_instruction_modes=recent_modes,
+        recent_goal_codes=recent_goals,
     )
 
 

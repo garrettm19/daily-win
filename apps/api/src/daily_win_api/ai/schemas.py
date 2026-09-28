@@ -146,6 +146,10 @@ class InstructionPlanContext(BaseModel):
     policy_version: str
     academic_band: str | None = None
     renderer_contracts: list[str] = Field(default_factory=list, max_length=12)
+    placement_policy_version: str | None = None
+    placement_entry_label: str | None = None
+    placement_why: str | None = None
+    presentation_constraint: str | None = None
 
 
 class EvidenceSummaryContext(BaseModel):
@@ -218,3 +222,9 @@ class DailyWinGenerationResult(BaseModel):
     output_tokens: int | None = None
     total_tokens: int | None = None
     latency_ms: int | None = None
+    cached_input_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    service_tier: str | None = None
+    requested_service_tier: str | None = None
+    reasoning_effort: str | None = None
+    generation_intent: str | None = None

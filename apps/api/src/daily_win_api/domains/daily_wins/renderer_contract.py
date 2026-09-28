@@ -15,6 +15,7 @@ ONE_CANONICAL_ASSESSMENT = "one_canonical_assessment"
 PRIMARY_SKILL_TIME_MAJORITY = "primary_skill_time_majority"
 REVIEW_PRACTICE_THEN_CHECK = "review_practice_then_check"
 FRESH_ASSESSMENT_ITEM = "fresh_assessment_item"
+AGE_RESPECTFUL_FOUNDATION = "age_respectful_foundation"
 
 SECTION_DURATION_IMPLAUSIBLE = "section_duration_implausible"
 GROWTH_OVERLAY_DISCONNECTED = "growth_overlay_disconnected"
@@ -28,6 +29,7 @@ HARD_RULE_CODES = frozenset(
         PRIMARY_SKILL_TIME_MAJORITY,
         REVIEW_PRACTICE_THEN_CHECK,
         FRESH_ASSESSMENT_ITEM,
+        AGE_RESPECTFUL_FOUNDATION,
     }
 )
 
@@ -83,6 +85,13 @@ _THREE_STEP_PROSE = re.compile(
     r"\bthree[-\s]step\b|\bvisual process\b",
     re.IGNORECASE,
 )
+_BABY_TALK = re.compile(
+    r"\b(baby words?|tiny words?|little kids?|little readers?|"
+    r"kindergarten(?: style)?|baby animals?|for toddlers?|"
+    r"sound it out like a baby|super easy baby|babyish|for babies|"
+    r"good job, little)\b",
+    re.IGNORECASE,
+)
 
 
 def contracts_for_plan(plan: Any) -> tuple[str, ...]:
@@ -97,18 +106,18 @@ def contracts_for_plan(plan: Any) -> tuple[str, ...]:
         rules.append(REVIEW_PRACTICE_THEN_CHECK)
     if _itemized(_field(plan, "primary_skill_code")):
         rules.append(FRESH_ASSESSMENT_ITEM)
+    if _field(plan, "presentation_constraint") == AGE_RESPECTFUL_FOUNDATION:
+        rules.append(AGE_RESPECTFUL_FOUNDATION)
     return tuple(rules)
 
 
 def validate_renderer_contract(draft: DailyWinDraft, plan: Any) -> None:
     failures = renderer_contract_hard_failures(draft, plan)
     if failures:
-        raise RendererContractError(failures[0])
+        raise RendererContractError(failures[0], failed_contracts=failures)
 
 
-def renderer_contract_hard_failures(
-    draft: DailyWinDraft, plan: Any
-) -> tuple[str, ...]:
+def renderer_contract_hard_failures(draft: DailyWinDraft, plan: Any) -> tuple[str, ...]:
     failures: list[str] = []
     if _three_concrete_cues_failed(draft, plan):
         failures.append(THREE_CONCRETE_CUES)
@@ -122,6 +131,8 @@ def renderer_contract_hard_failures(
         failures.append(REVIEW_PRACTICE_THEN_CHECK)
     if _fresh_item_reused(draft, plan):
         failures.append(FRESH_ASSESSMENT_ITEM)
+    if _age_respectful_failed(draft, plan):
+        failures.append(AGE_RESPECTFUL_FOUNDATION)
     return tuple(failures)
 
 
@@ -327,6 +338,26 @@ def _field(plan: Any, name: str) -> str:
 
 def _tokens(text: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]{3,}", text.lower()))
+
+
+def _age_respectful_failed(draft: DailyWinDraft, plan: Any) -> bool:
+    if _field(plan, "presentation_constraint") != AGE_RESPECTFUL_FOUNDATION:
+        contracts = getattr(plan, "renderer_contracts", None) or []
+        if AGE_RESPECTFUL_FOUNDATION not in contracts:
+            return False
+    blob = " ".join(
+        [_segment_blob(segment) for segment in draft.segments]
+        + [
+            draft.title,
+            draft.objective,
+            draft.observation_focus,
+            *draft.success_checks,
+            draft.parent_briefing.purpose,
+            draft.parent_briefing.how_to_coach,
+            draft.personalization_summary,
+        ]
+    )
+    return bool(_BABY_TALK.search(blob))
 
 
 def plan_with_contracts(plan: InstructionPlanContext) -> InstructionPlanContext:

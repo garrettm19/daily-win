@@ -2,6 +2,7 @@
 
 import re
 
+from daily_win_api.domains.daily_wins.insight import parent_insight
 from daily_win_api.domains.learning.enums import AcademicBand, AcademicResult
 from daily_win_api.domains.learning.presentation import (
     EVIDENCE_DISCLAIMER,
@@ -16,8 +17,8 @@ from daily_win_api.domains.learning.presentation import (
 from daily_win_api.domains.learning.progress import STILL_LEARNING
 
 _OVERCLAIM = re.compile(
-    r"\b(advanced|mastery|percentile|gifted|below grade|failed|regressed|"
-    r"grade level|standardized)\b",
+    r"\b(advanced|mastery|mastered|percentile|gifted|below grade|failed|regressed|"
+    r"grade level|standardized|learns best|visual learner|learning style)\b",
     re.IGNORECASE,
 )
 
@@ -49,13 +50,9 @@ def parent_facing_strings() -> tuple[str, ...]:
         )
         for result in AcademicResult:
             values.append(
-                academic_next_copy(
-                    result, needs_remediation=False, band=band
-                )
+                academic_next_copy(result, needs_remediation=False, band=band)
             )
-    values.append(
-        academic_state_label(AcademicBand.DEVELOPING, needs_remediation=True)
-    )
+    values.append(academic_state_label(AcademicBand.DEVELOPING, needs_remediation=True))
     values.append(
         academic_supporting_copy(
             AcademicBand.DEVELOPING, session_count=4, needs_remediation=True
@@ -75,6 +72,9 @@ def parent_facing_strings() -> tuple[str, ...]:
         )
         or ""
     )
+    insight = parent_insight("Hayes", "continued_after_prompt")
+    values.append(insight["observation"])
+    values.append(insight["next_adjustment"])
     return tuple(item for item in values if item)
 
 

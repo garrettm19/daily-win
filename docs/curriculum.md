@@ -1,6 +1,6 @@
 # Daily Win — Curriculum
 
-Catalog version: `curriculum_v1`.
+Catalog version: `curriculum_v2`.
 
 Daily Win owns a **small, versioned skill graph**. It is not a thousand-node knowledge map and not a dump of every state standard.
 
@@ -31,7 +31,7 @@ Each catalog entry stores:
 | `measurable_outcome` | Parent-observable success statement |
 | `progression_position` | Order within a strand |
 | `state_mode` | `mastery` (academic) or `trend` (growth/life) |
-| `taxonomy_version` | `curriculum_v1` |
+| `taxonomy_version` | `curriculum_v2` |
 | `active` | Soft hide without deleting history |
 
 ## Academic skills (V0.3)
@@ -53,7 +53,8 @@ Each catalog entry stores:
 
 **Writing**
 
-- `writing.spelling.high_frequency`
+- `writing.spelling.cvc`, `writing.spelling.patterns`, `writing.spelling.endings_suffixes`, `writing.spelling.multisyllabic_irregular`
+- `writing.spelling.high_frequency` (legacy; unsupported for generation)
 - `writing.sentences.complete_sentence`
 - `writing.organization.sequence_events`, `writing.organization.topic_details`
 
@@ -76,7 +77,8 @@ Current edges:
 - addition within 10 → subtraction within 10 → within 20
 - addition within 10 → equal groups
 - letter sounds → blend CVC → oral fluency
-- blend CVC → high-frequency spelling
+- blend CVC → CVC spelling → patterns → endings → longer/irregular
+- blend CVC → high-frequency spelling (legacy leaf only)
 - recall details → main idea → simple inference
 - complete sentence → sequence events → topic details
 
@@ -84,8 +86,8 @@ Rejected (do not add): compare → halves/fourths. Quantity comparison is not eq
 
 Planner interpretation:
 
-- Prerequisite **sufficiently evidenced** only if band is `demonstrated` or `retained`.
-- Otherwise the planner **reviews the prerequisite** before advancing (`prerequisite_evidence_missing`).
+- `not_observed` is unknown, not weakness. See [placement-calibration.md](placement-calibration.md).
+- Observed-weak prerequisites still block advancement and can step instruction down one level.
 - The LLM never invents canonical prerequisites.
 
 ## Assessment probes
@@ -115,6 +117,6 @@ Do not claim that a Daily Win “covers” a standard in a school-accountability
 
 ## Versioning
 
-`curriculum_v1` is the catalog identity. Changing hierarchy, prerequisite edges, or standards mapping requires a new `taxonomy_version` / documented curriculum version. Historical plans and evidence keep the version they were stored with.
+`curriculum_v2` is the catalog identity. Changing hierarchy, prerequisite edges, or standards mapping requires a new `taxonomy_version` / documented curriculum version. Historical plans and evidence keep the version they were stored with.
 
-V0.3.3 repaired prerequisite edges, construct-specific probes, and planner policy inside `curriculum_v1` skill identity. Historical `instruction_plans` keep the policy version they were stored with (`instruction_policy_v1` vs current `instruction_policy_v2`). Do not reinterpret old evidence as if the past had always used the repaired graph.
+V0.3.6 added a four-level spelling progression and `placement_policy_v1`. Historical `instruction_plans` keep the policy version they were stored with (`instruction_policy_v1` / `v2` / `v3` vs current `instruction_policy_v4` + `instruction_scheduler_v1`). Do not reinterpret old evidence as if the past had always used the new placement or scheduling rules.

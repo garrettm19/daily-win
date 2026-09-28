@@ -1,3 +1,7 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
@@ -56,7 +60,9 @@ describe('parent-facing errors', () => {
       }),
       false,
     );
-    assert.equal(EMPTY_COPY.history, 'No Daily Wins yet.');
+    assert.equal(parentMessage('progress', 'http'), PARENT_ERRORS.progress);
+    assert.equal(parentMessage('weekly', 'http'), PARENT_ERRORS.weekly);
+    assert.equal(EMPTY_COPY.history, 'No Daily Wins yet. Start today’s Win from Home.');
   });
 });
 
@@ -115,5 +121,48 @@ describe('demo session error classification', () => {
     );
     assert.equal(described.kind, null);
     assert.equal(diagnosticLabel(described.kind), null);
+  });
+});
+
+describe('production copy audit', () => {
+  const RAW_CODES = [
+    'configuration_error',
+    'provider_error',
+    'unsafe_content',
+    'renderer_contract_failed',
+    'instruction_plan_mismatch',
+    'feedback_required',
+    'generation_in_progress',
+  ];
+  const SKIP = new Set(['learning-qa.tsx', 'test-feedback.tsx']);
+
+  it('does not leak raw error codes on parent screens', () => {
+    const appDir = join(dirname(fileURLToPath(import.meta.url)), '../../app');
+    const files = readdirSync(appDir).filter(
+      (name) => name.endsWith('.tsx') && !SKIP.has(name),
+    );
+    for (const name of files) {
+      const text = readFileSync(join(appDir, name), 'utf8');
+      for (const code of RAW_CODES) {
+        if (name === 'index.tsx' && code === 'generation_in_progress') {
+          continue;
+        }
+        if (name === 'index.tsx' && code === 'feedback_required') {
+          continue;
+        }
+        assert.equal(
+          text.includes(`'${code}'`) || text.includes(`"${code}"`),
+          false,
+          `${name} displayed ${code}`,
+        );
+      }
+    }
+    const parentCopy = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'parentErrors.ts'),
+      'utf8',
+    );
+    for (const code of RAW_CODES) {
+      assert.equal(parentCopy.includes(code), false, `parentErrors leaked ${code}`);
+    }
   });
 });

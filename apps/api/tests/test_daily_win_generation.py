@@ -51,7 +51,7 @@ def test_valid_fake_daily_win_is_persisted(demo_db) -> None:
     gateway = FakeModelGateway()
     result = generate_demo_daily_win(demo_db, gateway)
 
-    assert result.content.primary_skill_code == "writing.sentences.complete_sentence"
+    assert result.content.primary_skill_code == "writing.organization.sequence_events"
     assert result.has_feedback is False
     assert result.content.adaptation_summary is None
     assert len(_ids(demo_db, DailyWin) - win_ids) == 1
@@ -72,9 +72,7 @@ def test_primary_skill_mismatch_is_rejected(demo_db) -> None:
     win_ids = _ids(demo_db, DailyWin)
     run_ids = _ids(demo_db, AiRun)
     gateway = FakeModelGateway(
-        draft=valid_daily_win_draft(
-            primary_skill_code="growth.persistence"
-        ),
+        draft=valid_daily_win_draft(primary_skill_code="growth.persistence"),
         align_to_plan=False,
     )
     try:
@@ -194,7 +192,7 @@ def test_get_latest_returns_persisted_daily_win(demo_db) -> None:
     assert latest.status_code == 200
     body = latest.json()
     assert body["id"] == generated.json()["id"]
-    assert body["primary_skill_code"] == "writing.sentences.complete_sentence"
+    assert body["primary_skill_code"] == "writing.organization.sequence_events"
     assert body["has_feedback"] is False
     assert "household_id" not in body
     assert "ai_run_id" not in body

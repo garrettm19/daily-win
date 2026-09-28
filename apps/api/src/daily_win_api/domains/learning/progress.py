@@ -72,6 +72,11 @@ class DemoGoalProgress(BaseModel):
     recent_pattern: str | None = None
 
 
+class DemoAcademicCheck(BaseModel):
+    occurred_at: datetime
+    result: str
+
+
 class DemoAcademicProgress(BaseModel):
     domain_label: str
     skill_name: str
@@ -81,6 +86,16 @@ class DemoAcademicProgress(BaseModel):
     session_count: int
     supporting_copy: str
     needs_review: bool = False
+    band: str = "not_observed"
+    recent_checks: list[DemoAcademicCheck] = []
+
+
+class DemoResultSnapshot(BaseModel):
+    difficulty: str | None = None
+    academic_result: str | None = None
+    setback_response: str | None = None
+    completion: str | None = None
+    engagement: str | None = None
 
 
 class DemoStateGuideItem(BaseModel):
@@ -143,7 +158,7 @@ def load_demo_progress(session: Session, child: Child) -> DemoProgressRead:
         for item, (_goal, skill) in zip(goals, goal_rows, strict=True)
         if is_growth_or_life_code(skill.code)
     ]
-    academic = _academic_progress(state_rows, _latest_academic_results(session, child))
+    academic = _academic_progress(state_rows, _academic_check_history(session, child))
     return DemoProgressRead(
         nickname=child.nickname,
         goals=goals,
@@ -203,7 +218,7 @@ _RESULT_RECENT = {
 
 def _academic_progress(
     state_rows: list[tuple[LearnerSkillState, Skill]],
-    latest_results: dict[UUID, AcademicResult],
+    check_history: dict[UUID, list[DemoAcademicCheck]],
 ) -> list[DemoAcademicProgress]:
     items: list[DemoAcademicProgress] = []
     for state, skill in state_rows:
@@ -221,28 +236,35 @@ def _academic_progress(
         if sessions == 0:
             continue
         needs = bool(payload.get("needs_remediation"))
+        checks = check_history.get(skill.id, [])
+        latest = None
+        if checks:
+            try:
+                latest = AcademicResult(checks[0].result)
+            except ValueError:
+                latest = None
         items.append(
             DemoAcademicProgress(
                 domain_label=domain_label(skill.domain),
                 skill_name=skill.display_name,
                 state_label=academic_state_label(band, needs_remediation=needs),
-                recent_evidence=_recent_academic_evidence(
-                    latest_results.get(skill.id)
-                ),
+                recent_evidence=_recent_academic_evidence(latest),
                 evidence_label=session_evidence_label(sessions),
                 session_count=sessions,
                 supporting_copy=academic_supporting_copy(
                     band, session_count=sessions, needs_remediation=needs
                 ),
                 needs_review=needs,
+                band=band.value,
+                recent_checks=checks[:6],
             )
         )
     return items
 
 
-def _latest_academic_results(
+def _academic_check_history(
     session: Session, child: Child
-) -> dict[UUID, AcademicResult]:
+) -> dict[UUID, list[DemoAcademicCheck]]:
     events = session.scalars(
         select(LearningEvent)
         .where(
@@ -254,19 +276,28 @@ def _latest_academic_results(
         .order_by(LearningEvent.occurred_at.desc(), LearningEvent.created_at.desc())
         .limit(80)
     ).all()
-    latest: dict[UUID, AcademicResult] = {}
+    history: dict[UUID, list[DemoAcademicCheck]] = {}
     for event in events:
-        if event.skill_id is None or event.skill_id in latest:
+        if event.skill_id is None:
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
         raw = payload.get("result")
         if not isinstance(raw, str):
             continue
         try:
-            latest[event.skill_id] = AcademicResult(raw)
+            AcademicResult(raw)
         except ValueError:
             continue
-    return latest
+        bucket = history.setdefault(event.skill_id, [])
+        if len(bucket) >= 6:
+            continue
+        bucket.append(
+            DemoAcademicCheck(
+                occurred_at=event.occurred_at or event.created_at,
+                result=raw,
+            )
+        )
+    return history
 
 
 def _recent_academic_evidence(result: AcademicResult | None) -> str | None:
@@ -375,22 +406,22 @@ def _event_parent_summary(
         f"From your reflection on {win_title}" if win_title else "From your reflection"
     )
     skill = skills.get(event.skill_id) if event.skill_id is not None else None
-    skill_name = "Goal"
-    if skill is not None:
-        skill_name = parent_goal_label(skill.code, skill.display_name)
-        if skill.code == "growth.persistence":
-            skill_name = "Persistence"
-        elif skill.code == "writing.organization":
-            skill_name = "Writing organization"
+    if skill is None:
+        return None
+    skill_name = parent_goal_label(skill.code, skill.display_name)
+    if skill.code == "growth.persistence":
+        skill_name = "Persistence"
+    elif skill.code == "writing.organization":
+        skill_name = "Writing organization"
     raw = payload.get("signal")
-    summary = "Parent observation"
-    if isinstance(raw, str):
+    if not isinstance(raw, str):
+        return None
+    try:
+        signal = map_setback_to_signal(raw)
+        summary = _RECENT_OBSERVATION[signal]
+    except (ValueError, KeyError):
         try:
-            signal = map_setback_to_signal(raw)
-            summary = _RECENT_OBSERVATION[signal]
-        except (ValueError, KeyError):
-            try:
-                summary = _RECENT_OBSERVATION[PersistenceSignal(raw)]
-            except ValueError:
-                summary = "Parent observation"
+            summary = _RECENT_OBSERVATION[PersistenceSignal(raw)]
+        except ValueError:
+            return None
     return DemoObservationRead(goal_name=skill_name, summary=summary, source=source)

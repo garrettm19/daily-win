@@ -1,7 +1,7 @@
 import type { AcademicResult, DemoDailyWin, DemoProgress } from '@/lib/api/types';
 
 export const SUPPORT_CAPTION =
-  'Independent: no instructional help on this part. Light prompt: one short cue that does not give the answer. A lot of help: multiple prompts, modelling, or a partial answer.';
+  'Independent means no help on the check. A little help is one short cue that does not give the answer.';
 
 export const ACADEMIC_RESULT_OPTIONS: {
   value: AcademicResult;
@@ -13,6 +13,17 @@ export const ACADEMIC_RESULT_OPTIONS: {
   { value: 'incorrect', label: "Didn't get it yet" },
   { value: 'not_attempted', label: "Didn't try this part" },
 ];
+
+/** Canonical check caption. Never use generated prompt_label or API support_caption. */
+export function checkCaption(
+  _assessment?: { prompt_label?: string; support_caption?: string | null } | null,
+): string {
+  return SUPPORT_CAPTION;
+}
+
+export function isCanonicalCheckLabel(label: string): boolean {
+  return ACADEMIC_RESULT_OPTIONS.some((item) => item.label === label);
+}
 
 export function hasAcademicProbe(win: DemoDailyWin | null): boolean {
   return Boolean(win?.assessment?.what_to_check);
@@ -27,6 +38,13 @@ export function asksAboutSetback(win: DemoDailyWin | null): boolean {
     return true;
   }
   return win.asks_about_setback !== false;
+}
+
+export function asksEngagementQuestion(
+  difficulty: 'too_easy' | 'about_right' | 'too_hard' | null,
+  hasBonus: boolean,
+): boolean {
+  return difficulty === 'too_easy' || difficulty === 'too_hard' || hasBonus;
 }
 
 export function countsAreValid(

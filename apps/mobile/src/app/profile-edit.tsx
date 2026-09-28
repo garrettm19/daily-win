@@ -145,7 +145,7 @@ export default function ProfileEditScreen() {
               setInterests(toggle(interests, value, catalog?.max_interests ?? 5))
             }
           />
-          <SectionLabel>Strengths</SectionLabel>
+          <SectionLabel>Things that feel easier</SectionLabel>
           <ChipPicker
             options={unique([...(catalog?.strength_suggestions ?? []), ...strengths])}
             selected={strengths}
@@ -154,7 +154,7 @@ export default function ProfileEditScreen() {
               setStrengths(toggle(strengths, value, catalog?.max_strengths ?? 5))
             }
           />
-          <SectionLabel>Things we’re working on</SectionLabel>
+          <SectionLabel>Things that feel harder</SectionLabel>
           <ChipPicker
             options={unique([
               ...(catalog?.difficulty_suggestions ?? []),
@@ -181,6 +181,10 @@ export default function ProfileEditScreen() {
             ))}
           </View>
           <SectionLabel>Goals · 2 or 3</SectionLabel>
+          <AppText variant="caption" style={styles.hint}>
+            #1 gets the strongest preference, but Daily Win will still rotate other
+            active goals.
+          </AppText>
           <View style={styles.stack}>
             {(catalog?.goals ?? []).map((goal) => (
               <ChoiceChip
@@ -200,7 +204,7 @@ export default function ProfileEditScreen() {
           </View>
           {goalCodes.length >= 2 ? (
             <>
-              <SectionLabel>Which is #1?</SectionLabel>
+              <SectionLabel>Which is #1 Main focus?</SectionLabel>
               <View style={styles.stack}>
                 {goalCodes.map((code) => {
                   const item = catalog?.goals.find((goal) => goal.code === code);
@@ -230,11 +234,12 @@ export default function ProfileEditScreen() {
             }
           />
           <SectionLabel>Preferred length</SectionLabel>
+          <AppText variant="caption">About how long — not a stopwatch.</AppText>
           <View style={styles.row}>
             {(catalog?.durations ?? [10, 15, 20, 25]).map((value) => (
               <ChoiceChip
                 key={value}
-                label={`${value} min`}
+                label={`About ${value} min`}
                 selected={minutes === value}
                 onPress={() => setMinutes(value)}
               />

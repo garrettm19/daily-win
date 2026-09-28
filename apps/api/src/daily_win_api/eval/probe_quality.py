@@ -157,6 +157,4 @@ def evaluate_probe_case(case: ProbeCase) -> list[str]:
     valid = probe_is_valid(case.skill_code, case.probe)
     if valid is case.expected_valid:
         return []
-    return [
-        f"{case.id}: valid={valid} expected={case.expected_valid} ({case.reason})"
-    ]
+    return [f"{case.id}: valid={valid} expected={case.expected_valid} ({case.reason})"]

@@ -1,24 +1,43 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useParentPilotView } from '@/hooks/useParentPilotView';
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 import { fetchDemoDailyWin, fetchLatestDemoDailyWin } from '@/lib/api/demo';
 import { parentMessage } from '@/lib/api/parentErrors';
-import type { DailyWinSegment, DemoDailyWin, LearningEngineDebug } from '@/lib/api/types';
+import type { DemoDailyWin, LearningEngineDebug } from '@/lib/api/types';
 import { changedTodayCopy } from '@/lib/academicLoop';
-import { colors, motion, space } from '@/theme';
+import {
+  academicResultLabel,
+  difficultyLabel,
+  persistenceLabel,
+} from '@/lib/competency';
+import { normalizeDisplayText } from '@/lib/displayNormalize';
+import {
+  cuesForSegment,
+  DISPLAY_LIMITS,
+  formatHistoryDate,
+  hasVisibleText,
+  materialsForDisplay,
+  visibleLines,
+} from '@/lib/productCopy';
+import { buildSessionSteps, type SessionStep } from '@/lib/sessionSteps';
+import { colors, motion, radius, space } from '@/theme';
 import { AppButton } from '@/ui/AppButton';
 import { AppText } from '@/ui/AppText';
 import { Card } from '@/ui/Card';
+import { CoachCue } from '@/ui/CoachCue';
+import { Disclosure } from '@/ui/Disclosure';
 import { EmptyState } from '@/ui/EmptyState';
 import { ErrorCallout } from '@/ui/ErrorCallout';
 import { GeneratedText } from '@/ui/GeneratedText';
-import { Icon } from '@/ui/Icon';
-import { PhaseBadge } from '@/ui/PhaseBadge';
+import { ResultMetric } from '@/ui/ResultMetric';
 import { Screen } from '@/ui/Screen';
 import { ScreenLoading } from '@/ui/ScreenLoading';
 import { SectionLabel } from '@/ui/SectionLabel';
+import { SessionStepper } from '@/ui/SessionStepper';
 import { TextButton } from '@/ui/TextButton';
 
 const MATERIAL_LABELS: Record<string, string> = {
@@ -36,11 +55,14 @@ const MATERIAL_LABELS: Record<string, string> = {
   TIMER: 'Timer',
 };
 
-const SEGMENT_ORDER: DailyWinSegment['type'][] = ['LEARN', 'DO', 'GROW'];
-
 export default function DailyWinScreen() {
-  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    id?: string | string[];
+    begin?: string | string[];
+  }>();
   const requestedId = Array.isArray(params.id) ? params.id[0] : params.id;
+  const beginNow =
+    (Array.isArray(params.begin) ? params.begin[0] : params.begin) === '1';
   const [dailyWin, setDailyWin] = useState<DemoDailyWin | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,43 +70,46 @@ export default function DailyWinScreen() {
   const loadedId = useRef<string | null>(null);
   const generationRef = useRef(0);
 
-  const load = useCallback((showLoading: boolean) => {
-    const generation = ++generationRef.current;
-    if (showLoading) {
-      setLoading(true);
-    }
-    const request = requestedId
-      ? fetchDemoDailyWin(requestedId)
-      : fetchLatestDemoDailyWin();
-    void request
-      .then((result) => {
-        if (generation !== generationRef.current) {
-          return;
-        }
-        if (result === null) {
-          setError('No Daily Win is available yet.');
-          setDailyWin(null);
-          return;
-        }
-        if (loadedId.current !== result.id) {
-          loadedId.current = result.id;
-          setStarted(result.has_feedback);
-        }
-        setDailyWin(result);
-        setError(null);
-      })
-      .catch(() => {
-        if (generation !== generationRef.current) {
-          return;
-        }
-        setError(parentMessage('load'));
-      })
-      .finally(() => {
-        if (generation === generationRef.current) {
-          setLoading(false);
-        }
-      });
-  }, [requestedId]);
+  const load = useCallback(
+    (showLoading: boolean) => {
+      const generation = ++generationRef.current;
+      if (showLoading) {
+        setLoading(true);
+      }
+      const request = requestedId
+        ? fetchDemoDailyWin(requestedId)
+        : fetchLatestDemoDailyWin();
+      void request
+        .then((result) => {
+          if (generation !== generationRef.current) {
+            return;
+          }
+          if (result === null) {
+            setError('No Daily Win is available yet.');
+            setDailyWin(null);
+            return;
+          }
+          if (loadedId.current !== result.id) {
+            loadedId.current = result.id;
+            setStarted(result.has_feedback || beginNow);
+          }
+          setDailyWin(result);
+          setError(null);
+        })
+        .catch(() => {
+          if (generation !== generationRef.current) {
+            return;
+          }
+          setError(parentMessage('load'));
+        })
+        .finally(() => {
+          if (generation === generationRef.current) {
+            setLoading(false);
+          }
+        });
+    },
+    [beginNow, requestedId],
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -95,7 +120,7 @@ export default function DailyWinScreen() {
   if (loading && !dailyWin) {
     return (
       <Screen scroll={false}>
-        <ScreenLoading title="Loading today’s Daily Win" body="Pulling the saved activity." />
+        <ScreenLoading title="Daily Win" />
       </Screen>
     );
   }
@@ -107,7 +132,7 @@ export default function DailyWinScreen() {
         {empty ? (
           <EmptyState
             title="No Daily Win is available yet."
-            body="Go home and generate today’s Daily Win."
+            body="Go home and start today’s Win."
           />
         ) : (
           <ErrorCallout
@@ -122,24 +147,61 @@ export default function DailyWinScreen() {
   if (!dailyWin) {
     return (
       <Screen scroll={false}>
-        <ScreenLoading title="Loading today’s Daily Win" />
+        <ScreenLoading title="Daily Win" />
+      </Screen>
+    );
+  }
+
+  if (dailyWin.has_feedback && requestedId) {
+    return (
+      <Screen>
+        <HistoryDetail win={dailyWin} />
       </Screen>
     );
   }
 
   return (
-    <Screen>
-      <DailyWinBody
-        key={dailyWin.id}
-        dailyWin={dailyWin}
-        started={started}
-        onStart={() => setStarted(true)}
-      />
-    </Screen>
+    <DailyWinSession
+      key={dailyWin.id}
+      dailyWin={dailyWin}
+      started={started}
+      onStart={() => setStarted(true)}
+    />
   );
 }
 
-function DailyWinBody({
+function HistoryDetail({ win }: { win: DemoDailyWin }) {
+  const snapshot = win.result_snapshot;
+  const date = formatHistoryDate(win.created_at);
+  return (
+    <>
+      <AppText variant="caption">{date}</AppText>
+      <GeneratedText variant="title">{win.title}</GeneratedText>
+      <AppText variant="secondary" style={styles.meta}>
+        {win.primary_skill_display_name}
+      </AppText>
+      <View style={styles.metrics}>
+        <ResultMetric
+          label="Result"
+          value={academicResultLabel(snapshot?.academic_result)}
+        />
+        <ResultMetric label="Challenge" value={difficultyLabel(snapshot?.difficulty)} />
+        <ResultMetric
+          label="Persistence"
+          value={persistenceLabel(snapshot?.setback_response)}
+        />
+      </View>
+      {hasVisibleText(win.one_thing_to_improve) ? (
+        <Card tone="plain" style={styles.block}>
+          <SectionLabel style={styles.tightLabel}>Coach note</SectionLabel>
+          <GeneratedText>{win.one_thing_to_improve ?? ''}</GeneratedText>
+        </Card>
+      ) : null}
+    </>
+  );
+}
+
+function DailyWinSession({
   dailyWin,
   started,
   onStart,
@@ -150,26 +212,12 @@ function DailyWinBody({
 }) {
   const router = useRouter();
   const reduceMotion = usePrefersReducedMotion();
-  const skipIntro = useRef(started);
-  const [reveal] = useState(() => new Animated.Value(started ? 1 : 0));
-  const changedToday = changedTodayCopy(dailyWin);
-  const materials = dailyWin.content.materials
-    .filter((item) => item !== 'NONE')
-    .map((item) => MATERIAL_LABELS[item] ?? item);
-  const segments = [...dailyWin.content.segments].sort(
-    (left, right) =>
-      SEGMENT_ORDER.indexOf(left.type) - SEGMENT_ORDER.indexOf(right.type),
-  );
+  const steps = useMemo(() => buildSessionSteps(dailyWin), [dailyWin]);
+  const firstAction = steps.find((step) => step.kind !== 'mission')?.id ?? 'reflect';
+  const [currentId, setCurrentId] = useState(started ? firstAction : 'mission');
+  const [reveal] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
-    if (!started) {
-      return;
-    }
-    if (skipIntro.current) {
-      skipIntro.current = false;
-      reveal.setValue(1);
-      return;
-    }
     if (reduceMotion) {
       reveal.setValue(1);
       return;
@@ -177,65 +225,35 @@ function DailyWinBody({
     reveal.setValue(0);
     Animated.timing(reveal, {
       toValue: 1,
-      duration: motion.normal,
+      duration: motion.fast,
       useNativeDriver: true,
     }).start();
-  }, [reduceMotion, reveal, started]);
+  }, [currentId, reduceMotion, reveal]);
+
+  const current = steps.find((step) => step.id === currentId) ?? steps[0];
+  const index = steps.findIndex((step) => step.id === currentId);
+  const showFooter =
+    started && current.kind !== 'mission' && current.kind !== 'reflect';
+
+  const goNext = () => {
+    const next = steps[index + 1];
+    if (next) {
+      setCurrentId(next.id);
+    }
+  };
+  const goBack = () => {
+    const prev = steps[index - 1];
+    if (prev) {
+      setCurrentId(prev.id);
+    }
+  };
 
   return (
-    <>
-      <GeneratedText variant="title">{dailyWin.title}</GeneratedText>
-      <AppText variant="secondary" style={styles.meta}>
-        {dailyWin.primary_skill_display_name} • About {dailyWin.duration_minutes}{' '}
-        minutes
-      </AppText>
-      <GeneratedText variant="body" style={styles.objective}>
-        {dailyWin.objective}
-      </GeneratedText>
-
-      {changedToday ? (
-        <Card tone="highlight" style={styles.changeCard}>
-          <View style={styles.changeHeader}>
-            <Icon name="sparkles" size={16} color={colors.textPrimary} />
-            <SectionLabel style={styles.changeLabel}>What changed today</SectionLabel>
-          </View>
-          <GeneratedText variant="emphasized" style={styles.changeBody}>
-            {changedToday}
-          </GeneratedText>
-        </Card>
-      ) : null}
-
-      <View style={styles.briefing}>
-        <SectionLabel>Why this Win</SectionLabel>
-        <GeneratedText style={styles.briefIntro}>
-          {dailyWin.content.personalization_summary}
-        </GeneratedText>
-        <BriefBlock label="Purpose" text={dailyWin.content.parent_briefing.purpose} />
-        <BriefBlock
-          label="How to coach"
-          text={dailyWin.content.parent_briefing.how_to_coach}
-        />
-        <BriefBlock
-          label="Watch for"
-          text={dailyWin.content.parent_briefing.watch_for}
-        />
-        <BriefBlock label="Avoid" text={dailyWin.content.parent_briefing.avoid} />
-      </View>
-
-      <AppText variant="caption" style={styles.materials}>
-        {materials.length > 0
-          ? `Before you start: ${materials.join(', ')}`
-          : 'Before you start: no extra materials.'}
-      </AppText>
-
-      {!started ? (
-        <AppButton
-          label={`Start with ${dailyWin.child_nickname}`}
-          onPress={onStart}
-        />
-      ) : null}
-
-      {started ? (
+    <SafeAreaView style={styles.safe} edges={['bottom', 'left', 'right']}>
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.scroll}
+        style={styles.flex}>
         <Animated.View
           style={{
             opacity: reveal,
@@ -248,80 +266,203 @@ function DailyWinBody({
               },
             ],
           }}>
-          {segments.map((segment) => (
-            <SegmentBlock key={segment.type} segment={segment} />
-          ))}
-
-          {dailyWin.assessment ? (
-            <View style={styles.checkBlock}>
-              <SectionLabel>What to check</SectionLabel>
-              <GeneratedText variant="emphasized">
-                {dailyWin.assessment.what_to_check}
-              </GeneratedText>
-              <SectionLabel>Success looks like</SectionLabel>
-              <GeneratedText>{dailyWin.assessment.success_looks_like}</GeneratedText>
-            </View>
+          {started && current.kind !== 'mission' ? (
+            <SessionStepper steps={steps} currentId={currentId} />
           ) : null}
-
-          <View style={styles.adaptBlock}>
-            <SectionLabel>If it’s too easy</SectionLabel>
-            <GeneratedText>{dailyWin.content.adaptations.if_too_easy}</GeneratedText>
-            <SectionLabel>If it’s too hard</SectionLabel>
-            <GeneratedText>{dailyWin.content.adaptations.if_too_hard}</GeneratedText>
-          </View>
-
-          {dailyWin.has_feedback ? (
-            <Card style={styles.closing}>
-              <AppText variant="cardTitle">Reflected</AppText>
-              <AppText variant="secondary">
-                You already reported how this activity went.
-              </AppText>
-            </Card>
-          ) : (
-            <Card style={styles.closing}>
-              <AppText variant="cardTitle">How did it go?</AppText>
-              <AppText variant="secondary">
-                A short reflection helps the next activity fit a little better.
-              </AppText>
-              <AppButton
-                label="Reflect on this Win"
-                onPress={() => router.push('/reflect')}
+          {current.kind === 'mission' ? (
+            <MissionStep
+              dailyWin={dailyWin}
+              onStart={() => {
+                onStart();
+                setCurrentId(firstAction);
+              }}
+            />
+          ) : null}
+          {current.kind === 'learn' || current.kind === 'do' || current.kind === 'grow'
+            ? (
+              <ActionStep
+                step={current}
+                dailyWin={dailyWin}
               />
-            </Card>
-          )}
+            )
+            : null}
+          {current.kind === 'bonus' ? <BonusStep dailyWin={dailyWin} /> : null}
+          {current.kind === 'reflect' ? (
+            <ReflectStep
+              dailyWin={dailyWin}
+              onReflect={() => router.push('/reflect')}
+            />
+          ) : null}
           <LearningEngineDebugCard engine={dailyWin.learning_engine} />
         </Animated.View>
+      </ScrollView>
+      {showFooter ? (
+        <View style={styles.footer}>
+          <View style={styles.footerBack}>
+            {index > 0 ? (
+              <TextButton label="Back" onPress={goBack} />
+            ) : null}
+          </View>
+          <View style={styles.footerNext}>
+            <AppButton label="Next" onPress={goNext} />
+          </View>
+        </View>
+      ) : null}
+    </SafeAreaView>
+  );
+}
+
+function MissionStep({
+  dailyWin,
+  onStart,
+}: {
+  dailyWin: DemoDailyWin;
+  onStart: () => void;
+}) {
+  const jobToday = visibleLines(dailyWin.coach_card, DISPLAY_LIMITS.jobBullets);
+  const materials = materialsForDisplay(dailyWin.content.materials, MATERIAL_LABELS);
+  const paperPencilOnly =
+    materials.length > 0 &&
+    materials.every((item) => item === 'Paper' || item === 'Pencil');
+  const why = changedTodayCopy(dailyWin);
+  return (
+    <>
+      <AppText variant="sectionLabel">Today</AppText>
+      <GeneratedText variant="title">{dailyWin.title}</GeneratedText>
+      <AppText variant="secondary" style={styles.meta}>
+        {dailyWin.primary_skill_display_name} · ~{dailyWin.duration_minutes} min
+      </AppText>
+      {jobToday.length > 0 ? (
+        <Card tone="highlight" style={styles.block}>
+          <SectionLabel style={styles.tightLabel}>Your game plan</SectionLabel>
+          {jobToday.map((item, index) => (
+            <View key={item} style={styles.planRow}>
+              <View style={styles.num}>
+                <AppText variant="caption" style={styles.numText}>
+                  {index + 1}
+                </AppText>
+              </View>
+              <GeneratedText variant="emphasized" style={styles.planText}>
+                {item}
+              </GeneratedText>
+            </View>
+          ))}
+        </Card>
+      ) : null}
+      {materials.length > 0 ? (
+        <View style={styles.block}>
+          <SectionLabel style={styles.tightLabel}>You’ll need</SectionLabel>
+          <AppText variant="secondary">
+            {paperPencilOnly ? 'Just paper and a pencil.' : materials.join(' · ')}
+          </AppText>
+        </View>
+      ) : null}
+      {why ? (
+        <Disclosure label="Why this today?">
+          <GeneratedText variant="body">{why}</GeneratedText>
+        </Disclosure>
+      ) : null}
+      <AppButton label="Begin" onPress={onStart} />
+    </>
+  );
+}
+
+function ActionStep({
+  step,
+  dailyWin,
+}: {
+  step: SessionStep;
+  dailyWin: DemoDailyWin;
+}) {
+  const segment = step.segment;
+  const actions = visibleLines(segment?.steps);
+  const cues = cuesForSegment(dailyWin.coach_cues, segment?.type ?? 'LEARN');
+  const watch =
+    step.kind === 'do' ? dailyWin.assessment?.what_to_check : null;
+  return (
+    <>
+      <AppText variant="sectionLabel">{step.label}</AppText>
+      {hasVisibleText(segment?.title) ? (
+        <GeneratedText variant="title">{segment?.title ?? ''}</GeneratedText>
+      ) : (
+        <AppText variant="screenTitle">{step.label}</AppText>
+      )}
+      {segment ? (
+        <AppText variant="caption">~{segment.minutes} min</AppText>
+      ) : null}
+      {actions.map((action, index) => (
+        <View key={`${index}-${action}`} style={styles.actionRow}>
+          <View style={styles.num}>
+            <AppText variant="caption" style={styles.numText}>
+              {index + 1}
+            </AppText>
+          </View>
+          <GeneratedText
+            variant={index === 0 ? 'emphasized' : 'body'}
+            style={styles.planText}>
+            {action}
+          </GeneratedText>
+        </View>
+      ))}
+      <CoachCue text={watch} />
+      {cues.length > 0 || hasVisibleText(segment?.parent_role) ? (
+        <Disclosure label="If needed">
+          {cues.map((cue) => (
+            <AppText key={`${cue.label}-${cue.text}`} variant="secondary">
+              {normalizeDisplayText(cue.text)}
+            </AppText>
+          ))}
+          {hasVisibleText(segment?.parent_role) ? (
+            <AppText variant="secondary">{segment?.parent_role}</AppText>
+          ) : null}
+        </Disclosure>
       ) : null}
     </>
   );
 }
 
-function SegmentBlock({ segment }: { segment: DailyWinSegment }) {
+function BonusStep({ dailyWin }: { dailyWin: DemoDailyWin }) {
+  const bonus = dailyWin.bonus_challenge;
+  if (!bonus) {
+    return null;
+  }
   return (
-    <View style={styles.segment}>
-      <PhaseBadge type={segment.type} />
-      <GeneratedText variant="emphasized" style={styles.segmentTitle}>
-        {segment.title}
-      </GeneratedText>
-      <AppText variant="caption">About {segment.minutes} minutes</AppText>
-      {segment.steps.map((step) => (
-        <GeneratedText key={step} style={styles.listItem}>
-          {step}
-        </GeneratedText>
-      ))}
-      <AppText variant="secondary" style={styles.parentRole}>
-        Parent role: {segment.parent_role}
-      </AppText>
-    </View>
+    <>
+      <AppText variant="sectionLabel">Bonus</AppText>
+      {hasVisibleText(bonus.title) ? (
+        <GeneratedText variant="title">{bonus.title}</GeneratedText>
+      ) : (
+        <AppText variant="screenTitle">One more if you want it</AppText>
+      )}
+      <AppText variant="caption">~{bonus.minutes} min · optional</AppText>
+      <GeneratedText style={styles.block}>{bonus.prompt}</GeneratedText>
+    </>
   );
 }
 
-function BriefBlock({ label, text }: { label: string; text: string }) {
+function ReflectStep({
+  dailyWin,
+  onReflect,
+}: {
+  dailyWin: DemoDailyWin;
+  onReflect: () => void;
+}) {
+  if (dailyWin.has_feedback) {
+    return (
+      <Card>
+        <AppText variant="cardTitle">Already reported</AppText>
+        <AppText variant="secondary">You already saved how this Win went.</AppText>
+      </Card>
+    );
+  }
   return (
-    <View style={styles.briefItem}>
-      <SectionLabel style={styles.briefLabel}>{label}</SectionLabel>
-      <GeneratedText>{text}</GeneratedText>
-    </View>
+    <Card>
+      <AppText variant="cardTitle">How’d it go?</AppText>
+      <AppText variant="secondary">
+        About a minute. This is what shapes the next move.
+      </AppText>
+      <AppButton label="Save a reflection" onPress={onReflect} />
+    </Card>
   );
 }
 
@@ -331,7 +472,8 @@ function LearningEngineDebugCard({
   engine: LearningEngineDebug | null | undefined;
 }) {
   const [open, setOpen] = useState(false);
-  if (!__DEV__ || !engine) {
+  const hide = useParentPilotView();
+  if (__DEV__ === false || hide || !engine) {
     return null;
   }
   const blob = JSON.stringify(engine);
@@ -339,117 +481,89 @@ function LearningEngineDebugCard({
     return null;
   }
   return (
-    <Card tone="soft" style={styles.engineCard}>
+    <Card tone="soft" style={styles.block}>
       <TextButton
         label={open ? 'Hide learning engine' : 'Learning engine'}
         onPress={() => setOpen((value) => !value)}
       />
       {open ? (
-        <View style={styles.engineBody}>
-          <AppText variant="caption">Development only. Not shown in production.</AppText>
-          <EngineRow label="Target" value={engine.target} />
-          <EngineRow label="Mode" value={engine.mode} />
-          <EngineRow label="Difficulty" value={engine.difficulty} />
-          <EngineRow label="Scaffold" value={engine.scaffold} />
-          <EngineRow label="Why" value={engine.why.join('\n')} />
-          <EngineRow label="Assessment" value={engine.assessment} />
-          <EngineRow label="Policy" value={engine.policy} />
-        </View>
+        <AppText variant="caption">Development only. Not shown in production.</AppText>
       ) : null}
     </Card>
   );
 }
 
-function EngineRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.engineRow}>
-      <SectionLabel style={styles.briefLabel}>{label}</SectionLabel>
-      <AppText variant="body">{value}</AppText>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
+  safe: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  flex: {
+    flex: 1,
+  },
+  scroll: {
+    paddingHorizontal: space.screenX,
+    paddingTop: space.screenTop,
+    paddingBottom: space.xl,
+  },
   meta: {
     marginTop: space.xs,
+    marginBottom: space.md,
   },
-  objective: {
-    marginTop: space.sm,
-  },
-  changeCard: {
-    marginTop: space.xl,
-  },
-  changeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: space.sm,
-  },
-  changeLabel: {
-    marginTop: 0,
-    marginBottom: 0,
-  },
-  changeBody: {
-    color: colors.textPrimary,
-  },
-  briefing: {
-    marginTop: space.xl,
-    gap: space.sm,
-  },
-  briefIntro: {
-    marginBottom: space.xs,
-  },
-  briefItem: {
-    paddingTop: space.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.borderSubtle,
-    gap: 4,
-  },
-  briefLabel: {
-    marginTop: 0,
-    marginBottom: 4,
-  },
-  materials: {
+  block: {
     marginTop: space.lg,
   },
-  segment: {
-    marginTop: space.xl,
-    paddingTop: space.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.borderSubtle,
-    gap: 6,
+  tightLabel: {
+    marginTop: 0,
   },
-  segmentTitle: {
-    marginTop: 4,
-  },
-  listItem: {
-    marginTop: 4,
-  },
-  parentRole: {
+  planRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: space.sm,
     marginTop: space.sm,
   },
-  adaptBlock: {
-    marginTop: space.xl,
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     gap: space.sm,
+    marginTop: space.md,
   },
-  checkBlock: {
-    marginTop: space.xl,
-    paddingTop: space.md,
+  planText: {
+    flex: 1,
+  },
+  num: {
+    width: 24,
+    height: 24,
+    borderRadius: radius.chipPill,
+    backgroundColor: colors.actionPrimarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  numText: {
+    color: colors.actionPrimary,
+    fontWeight: '700',
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: space.screenX,
+    paddingTop: space.xs,
+    paddingBottom: space.xs,
+    backgroundColor: colors.background,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.borderSubtle,
     gap: space.sm,
   },
-  engineCard: {
-    marginTop: space.xl,
+  footerBack: {
+    flex: 1,
   },
-  engineBody: {
-    marginTop: space.md,
-    gap: space.sm,
+  footerNext: {
+    flex: 2,
   },
-  engineRow: {
-    gap: 4,
-  },
-  closing: {
-    marginTop: space.xl,
+  metrics: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: space.lg,
   },
 });

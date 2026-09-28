@@ -9,6 +9,7 @@ import {
   type ApiErrorKind,
 } from '@/lib/api/parentErrors';
 import type { DemoChildProfile } from '@/lib/api/types';
+import { goalPriorityLabel } from '@/lib/productCopy';
 import { colors, space } from '@/theme';
 import { AppButton } from '@/ui/AppButton';
 import { AppText } from '@/ui/AppText';
@@ -69,16 +70,20 @@ export default function ProfileScreen() {
             Age {profile.baseline.age_years} • Grade {profile.baseline.grade}
           </AppText>
           <ProfileGroup title="Interests" values={profile.baseline.interests} />
-          <ProfileGroup title="Strengths" values={profile.baseline.strengths} />
+          <ProfileGroup title="Things that feel easier" values={profile.baseline.strengths} />
           <ProfileGroup
-            title="Working on"
+            title="Things that feel harder"
             values={profile.baseline.current_difficulties}
           />
           <View style={styles.group}>
             <SectionLabel>Goals</SectionLabel>
+            <AppText variant="caption">
+              #1 gets the strongest preference, but Daily Win will still rotate other
+              active goals.
+            </AppText>
             {profile.goals.map((goal) => (
               <AppText key={goal.skill_code} variant="body">
-                {goal.priority}. {goal.display_name}
+                {goalPriorityLabel(goal.priority, profile.goals.length)} · {goal.display_name}
               </AppText>
             ))}
           </View>
@@ -88,9 +93,14 @@ export default function ProfileScreen() {
               {profile.baseline.motivators.join(', ') || '—'}
             </AppText>
             <AppText variant="secondary">
-              About {profile.baseline.preferred_activity_minutes} minutes
+              About {profile.baseline.preferred_activity_minutes} min — a preference, not
+              an exact timer.
             </AppText>
           </View>
+          <AppText variant="caption" style={styles.quiet}>
+            Interests help engagement. Goals help scheduling. Parent notes are context,
+            not measured truth.
+          </AppText>
           <AppButton
             label="Edit profile"
             variant="secondary"
@@ -122,5 +132,8 @@ const styles = StyleSheet.create({
     paddingTop: space.md,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.borderSubtle,
+  },
+  quiet: {
+    marginTop: space.xl,
   },
 });

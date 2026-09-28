@@ -164,6 +164,39 @@ SKILL_STANDARD_REFS: tuple[dict[str, str], ...] = (
         "note": "Add one on-topic supporting detail.",
     },
     {
+        "skill_code": "writing.spelling.cvc",
+        "standard_code": "CCSS.ELA-LITERACY.L.K.2.D",
+        "source": STANDARDS_SOURCE,
+        "version": STANDARDS_VERSION,
+        "note": "Spell simple CVC words by encoding sounds; not a word-list inventory.",
+    },
+    {
+        "skill_code": "writing.spelling.patterns",
+        "standard_code": "CCSS.ELA-LITERACY.L.1.2.D",
+        "source": STANDARDS_SOURCE,
+        "version": STANDARDS_VERSION,
+        "note": (
+            "One common pattern word (vowel team or blend), not a full "
+            "pattern inventory."
+        ),
+    },
+    {
+        "skill_code": "writing.spelling.endings_suffixes",
+        "standard_code": "CCSS.ELA-LITERACY.L.2.2.D",
+        "source": STANDARDS_SOURCE,
+        "version": STANDARDS_VERSION,
+        "note": "One familiar inflected word (-ed/-ing/-s); not a morphology test.",
+    },
+    {
+        "skill_code": "writing.spelling.multisyllabic_irregular",
+        "standard_code": "CCSS.ELA-LITERACY.L.3.2.E",
+        "source": STANDARDS_SOURCE,
+        "version": STANDARDS_VERSION,
+        "note": (
+            "One irregular or longer word; grade expectation is a prior, not mastery."
+        ),
+    },
+    {
         "skill_code": "writing.spelling.high_frequency",
         "standard_code": "CCSS.ELA-LITERACY.L.1.2.D",
         "source": STANDARDS_SOURCE,

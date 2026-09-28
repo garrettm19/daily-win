@@ -17,6 +17,9 @@ import type {
   DemoProgress,
   DemoResetRead,
   DemoSession,
+  LearningQaBundle,
+  NextWinState,
+  WeeklyCoachReport,
 } from '@/lib/api/types';
 
 export function fetchDemoSession(): Promise<DemoSession> {
@@ -75,6 +78,10 @@ export async function fetchLatestDemoDailyWin(): Promise<DemoDailyWin | null> {
     }
     throw error;
   }
+}
+
+export async function fetchNextWinState(): Promise<NextWinState> {
+  return apiGet<NextWinState>('/api/v1/demo/next-win-state');
 }
 
 export async function generateDemoDailyWin(): Promise<DemoDailyWin> {
@@ -171,6 +178,10 @@ export async function submitDemoDailyWinFeedback(
   }
 }
 
+export async function fetchWeeklyCoachReport(): Promise<WeeklyCoachReport> {
+  return apiGet<WeeklyCoachReport>('/api/v1/demo/weekly-report');
+}
+
 export async function resetDemoActivityHistory(): Promise<DemoResetRead> {
   try {
     return await apiPost<DemoResetRead>('/api/v1/demo/reset/activity');
@@ -200,6 +211,23 @@ export async function restartDemoSession(): Promise<DemoResetRead> {
       error instanceof ApiError ? error.errorCode : undefined,
       error instanceof ApiError ? error.kind : 'http',
     );
+  }
+}
+
+export function fetchLearningQa(): Promise<LearningQaBundle> {
+  return apiGet<LearningQaBundle>('/api/v1/demo/observatory/learning-qa');
+}
+
+export async function recordGuideTiming(payload: {
+  guide_started_at: string;
+  guide_finished_at: string;
+  guide_skipped: boolean;
+  guide_dwell_ms: number;
+}): Promise<void> {
+  try {
+    await apiPost('/api/v1/demo/pilot/guide-timing', payload);
+  } catch {
+    return;
   }
 }
 

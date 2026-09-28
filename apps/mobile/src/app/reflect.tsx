@@ -15,19 +15,22 @@ import {
   saveReflectionDraft,
 } from '@/lib/reflectionDraft';
 import { clampText, TEXT_LIMITS } from '@/lib/textLimits';
+import {
+  ACADEMIC_RESULT_OPTIONS,
+  asksAboutSetback,
+  asksEngagementQuestion,
+  asksForCounts,
+  checkCaption,
+  countsAreValid,
+  hasAcademicProbe,
+} from '@/lib/academicLoop';
+import { isSelectableLabel } from '@/lib/displayNormalize';
+import { DISPLAY_LIMITS, optionLabel, selectableOptionLabel } from '@/lib/productCopy';
 import type {
   AcademicResult,
   DailyWinFeedbackCreate,
   DemoDailyWin,
 } from '@/lib/api/types';
-import {
-  ACADEMIC_RESULT_OPTIONS,
-  SUPPORT_CAPTION,
-  asksAboutSetback,
-  asksForCounts,
-  countsAreValid,
-  hasAcademicProbe,
-} from '@/lib/academicLoop';
 import { colors, radius, space } from '@/theme';
 import { AppButton } from '@/ui/AppButton';
 import { AppText } from '@/ui/AppText';
@@ -46,9 +49,9 @@ const DIFFICULTY: { value: DailyWinFeedbackCreate['difficulty']; label: string }
 
 const ENGAGEMENT: { value: DailyWinFeedbackCreate['engagement']; label: string }[] =
   [
-    { value: 'low', label: 'Low' },
-    { value: 'medium', label: 'Medium' },
-    { value: 'high', label: 'High' },
+    { value: 'low', label: 'Not into it' },
+    { value: 'medium', label: 'Into it' },
+    { value: 'high', label: 'Really into it' },
   ];
 
 const COMPLETION: { value: DailyWinFeedbackCreate['completion']; label: string }[] =
@@ -90,6 +93,11 @@ export default function ReflectScreen() {
   const [attemptedCount, setAttemptedCount] = useState<string>('');
   const [whatHelped, setWhatHelped] = useState('');
   const [additionalNote, setAdditionalNote] = useState('');
+  const [selfCorrection, setSelfCorrection] = useState<string | null>(null);
+  const [strategyObserved, setStrategyObserved] = useState<string | null>(null);
+  const [performanceEffort, setPerformanceEffort] = useState<string | null>(null);
+  const [noticeChips, setNoticeChips] = useState<string[]>([]);
+  const [bonusEngagement, setBonusEngagement] = useState<string | null>(null);
   const generationRef = useRef(0);
   const submitLock = useRef(false);
 
@@ -192,13 +200,17 @@ export default function ReflectScreen() {
   const needsAcademic = hasAcademicProbe(dailyWin);
   const needsSetback = asksAboutSetback(dailyWin);
   const needsCounts = asksForCounts(dailyWin);
+  const asksEngagement = asksEngagementQuestion(
+    difficulty,
+    Boolean(dailyWin?.bonus_challenge),
+  );
   const parsedCorrect = correctCount === '' ? null : Number(correctCount);
   const parsedAttempted = attemptedCount === '' ? null : Number(attemptedCount);
   const countOk = !needsCounts || countsAreValid(parsedCorrect, parsedAttempted);
 
   const canSubmit =
     difficulty !== null &&
-    engagement !== null &&
+    (asksEngagement ? engagement !== null : true) &&
     completion !== null &&
     (!needsSetback || setbackResponse !== null) &&
     (!needsAcademic || academicResult !== null) &&
@@ -214,7 +226,7 @@ export default function ReflectScreen() {
       dailyWin === null ||
       dailyWin.has_feedback ||
       difficulty === null ||
-      engagement === null ||
+      (asksEngagement && engagement === null) ||
       completion === null ||
       (needsAcademic && academicResult === null) ||
       (needsSetback && setbackResponse === null) ||
@@ -229,7 +241,7 @@ export default function ReflectScreen() {
     setErrorKind(null);
     const payload: DailyWinFeedbackCreate = {
       difficulty,
-      engagement,
+      engagement: engagement ?? 'medium',
       completion,
       setback_response: setbackResponse ?? 'no_setback_occurred',
     };
@@ -248,6 +260,21 @@ export default function ReflectScreen() {
     if (extra) {
       payload.additional_note = extra;
     }
+    if (selfCorrection) {
+      payload.self_correction = selfCorrection;
+    }
+    if (strategyObserved) {
+      payload.strategy_observed = strategyObserved;
+    }
+    if (performanceEffort) {
+      payload.performance_effort = performanceEffort;
+    }
+    if (noticeChips.length > 0) {
+      payload.notice_chips = noticeChips;
+    }
+    if (bonusEngagement) {
+      payload.bonus_engagement = bonusEngagement;
+    }
     void submitDemoDailyWinFeedback(dailyWin.id, payload)
       .then((result) => {
         clearReflectionDraft(dailyWin.id);
@@ -263,6 +290,11 @@ export default function ReflectScreen() {
             growth_observation:
               result.growth_observation ?? result.insight.observation,
             academic_area: result.what_we_learned?.[0]?.area ?? '',
+            skill: dailyWin.primary_skill_display_name,
+            academic_result: academicResult ?? '',
+            difficulty,
+            setback: setbackResponse ?? '',
+            self_correction: selfCorrection ?? '',
           },
         });
       })
@@ -331,9 +363,9 @@ export default function ReflectScreen() {
       ) : null}
       {!loading && dailyWin ? (
         <>
-            <AppText variant="screenTitle">How did it go?</AppText>
+            <AppText variant="screenTitle">How’d it go?</AppText>
             <AppText variant="secondary" style={styles.meta}>
-              About a minute.
+              Report the session. About a minute.
             </AppText>
 
             {dailyWin.has_feedback ? (
@@ -341,7 +373,7 @@ export default function ReflectScreen() {
             ) : null}
 
             <ChoiceGroup
-              title="Difficulty"
+              title="Challenge"
               options={DIFFICULTY}
               value={difficulty}
               onChange={(value) => {
@@ -350,36 +382,11 @@ export default function ReflectScreen() {
               }}
               disabled={submitting || dailyWin.has_feedback}
             />
-            <ChoiceGroup
-              title="Engagement"
-              options={ENGAGEMENT}
-              value={engagement}
-              onChange={(value) => {
-                setEngagement(value);
-                persistDraft({ engagement: value });
-              }}
-              disabled={submitting || dailyWin.has_feedback}
-            />
-            <ChoiceGroup
-              title="Completion"
-              options={COMPLETION}
-              value={completion}
-              onChange={(value) => {
-                setCompletion(value);
-                persistDraft({ completion: value });
-              }}
-              disabled={submitting || dailyWin.has_feedback}
-            />
             {needsAcademic && dailyWin.assessment ? (
               <>
                 <ChoiceGroup
-                  title="How did this part go?"
-                  caption={[
-                    dailyWin.assessment.prompt_label,
-                    dailyWin.assessment.support_caption ?? SUPPORT_CAPTION,
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
+                  title="The check"
+                  caption={checkCaption(dailyWin.assessment)}
                   options={ACADEMIC_RESULT_OPTIONS}
                   value={academicResult}
                   onChange={(value) => {
@@ -430,7 +437,7 @@ export default function ReflectScreen() {
 
             {needsSetback ? (
             <ChoiceGroup
-              title="After the first setback..."
+              title="If they got stuck..."
               options={SETBACK}
               value={setbackResponse}
               onChange={(value) => {
@@ -439,6 +446,119 @@ export default function ReflectScreen() {
               }}
               disabled={submitting || dailyWin.has_feedback}
             />
+            ) : null}
+
+            {dailyWin.smart_reflection?.notice_chips ? (
+              <View style={styles.group}>
+                <SectionLabel>What stood out?</SectionLabel>
+                <AppText variant="caption" style={styles.caption}>
+                  Optional · pick any that fit
+                </AppText>
+                <View style={styles.chipRow}>
+                  {dailyWin.smart_reflection.notice_chips
+                    .slice(0, DISPLAY_LIMITS.noticeChips)
+                    .map((chip) => {
+                      const label = selectableOptionLabel(chip);
+                      if (!label) {
+                        return null;
+                      }
+                      return (
+                    <ChoiceChip
+                      key={chip}
+                      label={label}
+                      selected={noticeChips.includes(chip)}
+                      disabled={submitting || dailyWin.has_feedback}
+                      onPress={() => {
+                        setNoticeChips((current) =>
+                          current.includes(chip)
+                            ? current.filter((item) => item !== chip)
+                            : [...current, chip],
+                        );
+                      }}
+                    />
+                      );
+                    })}
+                </View>
+              </View>
+            ) : null}
+
+            {dailyWin.smart_reflection?.self_correction_options &&
+            dailyWin.primary_skill_code.startsWith('writing.') ? (
+              <ChoiceGroup
+                title="Did they notice and fix it?"
+                options={dailyWin.smart_reflection.self_correction_options.map((value) => ({
+                  value,
+                  label: optionLabel(value),
+                }))}
+                value={selfCorrection}
+                onChange={setSelfCorrection}
+                disabled={submitting || dailyWin.has_feedback}
+              />
+            ) : null}
+
+            {dailyWin.smart_reflection?.effort_options && needsAcademic ? (
+              <ChoiceGroup
+                title="Did this look automatic?"
+                options={dailyWin.smart_reflection.effort_options.map((value) => ({
+                  value,
+                  label: optionLabel(value),
+                }))}
+                value={performanceEffort}
+                onChange={setPerformanceEffort}
+                disabled={submitting || dailyWin.has_feedback}
+              />
+            ) : null}
+
+            {dailyWin.smart_reflection?.strategy_options &&
+            dailyWin.smart_reflection.strategy_options.length > 1 &&
+            needsAcademic ? (
+              <ChoiceGroup
+                title="What strategy did you see?"
+                options={dailyWin.smart_reflection.strategy_options.map((value) => ({
+                  value,
+                  label: optionLabel(value),
+                }))}
+                value={strategyObserved}
+                onChange={setStrategyObserved}
+                disabled={submitting || dailyWin.has_feedback}
+              />
+            ) : null}
+
+            <ChoiceGroup
+              title="Did you finish?"
+              options={COMPLETION}
+              value={completion}
+              onChange={(value) => {
+                setCompletion(value);
+                persistDraft({ completion: value });
+              }}
+              disabled={submitting || dailyWin.has_feedback}
+            />
+
+            {asksEngagement ? (
+              <ChoiceGroup
+                title="How into it were they?"
+                options={ENGAGEMENT}
+                value={engagement}
+                onChange={(value) => {
+                  setEngagement(value);
+                  persistDraft({ engagement: value });
+                }}
+                disabled={submitting || dailyWin.has_feedback}
+              />
+            ) : null}
+
+            {dailyWin.bonus_challenge && dailyWin.smart_reflection?.bonus_engagement_options ? (
+              <ChoiceGroup
+                title="If you tried the bonus..."
+                options={dailyWin.smart_reflection.bonus_engagement_options.map((value) => ({
+                  value,
+                  label: optionLabel(value),
+                }))}
+                value={bonusEngagement}
+                onChange={setBonusEngagement}
+                disabled={submitting || dailyWin.has_feedback}
+              />
             ) : null}
 
             {needsSetback ? (
@@ -535,7 +655,9 @@ function ChoiceGroup<T extends string>({
         </AppText>
       ) : null}
       <View style={styles.chipRow}>
-        {options.map((option) => (
+        {options
+          .filter((option) => isSelectableLabel(option.label))
+          .map((option) => (
           <ChoiceChip
             key={option.value}
             label={option.label}

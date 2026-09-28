@@ -141,7 +141,7 @@ export default function SetupScreen() {
       preferred_activity_minutes: draft.minutes ?? 20,
     })
       .then(() => {
-        router.replace('/');
+        router.replace('/guide');
       })
       .catch((caught: unknown) => {
         submitLock.current = false;
@@ -202,10 +202,10 @@ export default function SetupScreen() {
             />
           ) : null}
           {catalog === null && error ? (
-            <AppButton label="Retry" variant="secondary" onPress={loadCatalog} />
+            <AppButton label="Try again" variant="secondary" onPress={loadCatalog} />
           ) : null}
           <AppButton
-            label={step === 5 ? 'Create demo profile' : 'Next'}
+            label={step === 5 ? 'Create profile' : 'Next'}
             onPress={goNext}
             disabled={!canContinue || submitting}
             loading={submitting}
@@ -282,7 +282,7 @@ function EnjoyStep({
 }) {
   return (
     <>
-      <AppText variant="screenTitle" style={styles.stepTitle}>What they enjoy / do well</AppText>
+      <AppText variant="screenTitle" style={styles.stepTitle}>What they enjoy</AppText>
       <SectionLabel>Interests · up to 5</SectionLabel>
       <ChipPicker
         options={mergeOptions(catalog?.interest_suggestions ?? [], draft.interests)}
@@ -307,7 +307,7 @@ function EnjoyStep({
           setDraft({ ...draft, interests: next, customInterest: '' });
         }}
       />
-      <SectionLabel>Strengths · up to 5</SectionLabel>
+      <SectionLabel>Things that feel easier · up to 5</SectionLabel>
       <ChipPicker
         options={mergeOptions(catalog?.strength_suggestions ?? [], draft.strengths)}
         selected={draft.strengths}
@@ -346,9 +346,9 @@ function HarderStep({
 }) {
   return (
     <>
-      <AppText variant="screenTitle" style={styles.stepTitle}>What is harder</AppText>
-      <AppText variant="secondary">Parent-reported only. Not a diagnosis.</AppText>
-      <SectionLabel>Things that are harder · up to 5</SectionLabel>
+      <AppText variant="screenTitle" style={styles.stepTitle}>What feels harder</AppText>
+      <AppText variant="secondary">Your notes — not a diagnosis.</AppText>
+      <SectionLabel>Things that feel harder · up to 5</SectionLabel>
       <ChipPicker
         options={mergeOptions(
           catalog?.difficulty_suggestions ?? [],
@@ -409,7 +409,10 @@ function GoalsStep({
   return (
     <>
       <AppText variant="screenTitle" style={styles.stepTitle}>Goals</AppText>
-      <AppText variant="secondary">Choose 2 or 3, then pick which matters most.</AppText>
+      <AppText variant="secondary">
+        Choose 2 or 3. #1 gets the strongest preference, but Daily Win will still
+        rotate other active goals.
+      </AppText>
       {Object.entries(grouped).map(([domain, items]) => (
         <View key={domain} style={styles.group}>
           <SectionLabel>{domain}</SectionLabel>
@@ -437,7 +440,7 @@ function GoalsStep({
       ))}
       {draft.goalCodes.length >= 2 ? (
         <>
-          <SectionLabel>Which is #1?</SectionLabel>
+          <SectionLabel>Which is #1 Main focus?</SectionLabel>
           <View style={styles.stack}>
           {draft.goalCodes.map((code) => {
             const item = goals.find((goal) => goal.code === code);
@@ -483,12 +486,13 @@ function WorksStep({
           })
         }
       />
-      <SectionLabel>Preferred activity length</SectionLabel>
+      <SectionLabel>Preferred length</SectionLabel>
+      <AppText variant="caption">About how long — not a stopwatch.</AppText>
       <View style={styles.row}>
         {(catalog?.durations ?? [10, 15, 20, 25]).map((minutes) => (
           <ChoiceChip
             key={minutes}
-            label={`${minutes} min`}
+            label={`About ${minutes} min`}
             selected={draft.minutes === minutes}
             onPress={() => setDraft({ ...draft, minutes })}
           />
@@ -501,9 +505,9 @@ function WorksStep({
           {draft.grade === 'K' ? 'K' : draft.grade}
         </AppText>
         <AppText variant="secondary">Enjoys: {draft.interests.join(', ') || '—'}</AppText>
-        <AppText variant="secondary">Strengths: {draft.strengths.join(', ') || '—'}</AppText>
+        <AppText variant="secondary">Easier: {draft.strengths.join(', ') || '—'}</AppText>
         <AppText variant="secondary">
-          Working on: {draft.difficulties.join(', ') || '—'}
+          Harder: {draft.difficulties.join(', ') || '—'}
         </AppText>
         <AppText variant="secondary">
           Top goal:{' '}

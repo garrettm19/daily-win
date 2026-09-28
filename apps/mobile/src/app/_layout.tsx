@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
 import { startAdvisoryHealthProbe } from '@/lib/api/health';
+import { hydratePilotView, setPilotViewStore } from '@/lib/pilotView';
 import { colors, fontFamily } from '@/theme';
 import { HeaderHomeButton } from '@/ui/HeaderHomeButton';
 
@@ -23,6 +24,18 @@ export default function RootLayout() {
   useEffect(() => {
     if (__DEV__) {
       startAdvisoryHealthProbe();
+      void (async () => {
+        try {
+          const SecureStore = await import('expo-secure-store');
+          setPilotViewStore({
+            getItem: (key) => SecureStore.getItemAsync(key),
+            setItem: (key, value) => SecureStore.setItemAsync(key, value),
+          });
+          await hydratePilotView();
+        } catch {
+          return;
+        }
+      })();
     }
   }, []);
 
@@ -47,7 +60,14 @@ export default function RootLayout() {
         <Stack.Screen
           name="setup"
           options={{
-            title: 'Create a demo profile',
+            title: 'Create a profile',
+            headerRight: () => <HeaderHomeButton />,
+          }}
+        />
+        <Stack.Screen
+          name="guide"
+          options={{
+            title: 'How Daily Win works',
             headerRight: () => <HeaderHomeButton />,
           }}
         />
@@ -96,7 +116,7 @@ export default function RootLayout() {
         <Stack.Screen
           name="insight"
           options={{
-            title: 'What we learned',
+            title: 'Result',
             headerRight: () => <HeaderHomeButton />,
           }}
         />
@@ -104,6 +124,20 @@ export default function RootLayout() {
           name="test-feedback"
           options={{
             title: 'Test feedback',
+            headerRight: () => <HeaderHomeButton />,
+          }}
+        />
+        <Stack.Screen
+          name="weekly-report"
+          options={{
+            title: 'This week',
+            headerRight: () => <HeaderHomeButton />,
+          }}
+        />
+        <Stack.Screen
+          name="learning-qa"
+          options={{
+            title: 'Learning QA',
             headerRight: () => <HeaderHomeButton />,
           }}
         />

@@ -166,7 +166,7 @@ def test_custom_profile_context_generation(demo_db) -> None:
         "organizing writing"
     ]
     assert context.instruction_plan.primary_skill_code == (
-        "writing.sentences.complete_sentence"
+        "writing.organization.topic_details"
     )
     assert "child_id" not in dumped
     assert "household_id" not in dumped
@@ -218,7 +218,7 @@ def test_profile_edits_affect_future_generation_only(demo_db) -> None:
     assert historical.json()["title"] == win_before["title"]
     assert historical.json()["content"] == win_before["content"]
     assert historical.json()["primary_skill_code"] == (
-        "writing.sentences.complete_sentence"
+        "writing.organization.topic_details"
     )
     after_events = [
         (row.id, dict(row.payload))
@@ -334,7 +334,7 @@ def test_two_tester_isolation_resets_and_progress(demo_db) -> None:
     context = gateway.calls[-1]
     assert context.nickname == "Nova"
     assert context.instruction_plan.primary_skill_code == (
-        "writing.sentences.complete_sentence"
+        "writing.organization.topic_details"
     )
     client_b.post(
         f"/api/v1/demo/daily-wins/{win_b.json()['id']}/feedback", json=CONTINUED_JSON

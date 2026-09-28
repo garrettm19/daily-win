@@ -2,12 +2,14 @@ import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from daily_win_api.ai.gateway import ModelGateway
 from daily_win_api.api.deps import get_model_gateway
 from daily_win_api.api.errors import SanitizedClientError
+from daily_win_api.core.config import DEFAULT_OPENAI_MODEL, get_settings
 from daily_win_api.db.session import get_db
 from daily_win_api.dev.presets import (
     DIFFICULTY_SUGGESTIONS,
@@ -57,6 +59,20 @@ from daily_win_api.domains.daily_wins.feedback import (
     FeedbackUnavailableError,
     submit_demo_feedback,
 )
+from daily_win_api.domains.daily_wins.first_win import (
+    first_win_timing_snapshot,
+    record_guide_dwell,
+)
+from daily_win_api.domains.daily_wins.jobs import (
+    schedule_prepare_after_profile_setup,
+    schedule_prepare_after_reflection,
+)
+from daily_win_api.domains.daily_wins.latency import GenerationTimer
+from daily_win_api.domains.daily_wins.preparation import (
+    TRIGGER_FIRST_PROFILE_SETUP,
+    mark_preparation_started,
+    read_next_win_preparation,
+)
 from daily_win_api.domains.daily_wins.queries import (
     get_demo_daily_win,
     get_latest_demo_daily_win,
@@ -71,19 +87,44 @@ from daily_win_api.domains.daily_wins.schemas import (
     CLIENT_RESET_FAILED,
     CLIENT_SETUP_REQUIRED,
     CLIENT_UNAVAILABLE,
+    ContextUnavailableError,
     DailyWinFeedbackCreate,
     DailyWinGenerationError,
     DemoDailyWinRead,
     DemoFeedbackRead,
     DemoResetRead,
+    FirstWinTimingRead,
+    GuideTimingWrite,
+    NextWinStateRead,
+    PilotStatusRead,
+    WeeklyCoachReportRead,
 )
 from daily_win_api.domains.daily_wins.service import generate_demo_daily_win
+from daily_win_api.domains.learning.observatory import (
+    build_curriculum_graph,
+    build_learner_snapshot,
+    build_learning_qa,
+    build_learning_trace,
+    build_next_win_preview,
+    build_redacted_context,
+    engine_version_report,
+)
+from daily_win_api.domains.learning.observatory_schemas import (
+    CurriculumGraphTrace,
+    EngineVersionReport,
+    LearnerSnapshot,
+    LearningQaBundle,
+    LearningTrace,
+    NextWinPreview,
+    RedactedContextReport,
+)
 from daily_win_api.domains.learning.progress import (
     DemoDailyWinSummary,
     DemoProgressRead,
     list_demo_daily_win_summaries,
     load_demo_progress,
 )
+from daily_win_api.domains.learning.weekly_query import load_weekly_summary
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +154,21 @@ def require_configured_child(tenant: DemoTenant) -> Child:
             error_code="setup_required",
         )
     return tenant.child
+
+
+def _begin_first_win_preparation(
+    db: Session, child_id: UUID, background_tasks: BackgroundTasks
+) -> None:
+    from daily_win_api.domains.daily_wins import jobs as win_jobs
+
+    if not win_jobs.BACKGROUND_PREGENERATE_ENABLED:
+        return
+    child = db.get(Child, child_id)
+    if child is None:
+        return
+    mark_preparation_started(db, child, TRIGGER_FIRST_PROFILE_SETUP)
+    db.commit()
+    schedule_prepare_after_profile_setup(child.id, background_tasks.add_task)
 
 
 @router.get("/session", response_model=DemoSessionRead)
@@ -165,11 +221,13 @@ def read_onboarding_catalog(
 def create_hayes_demo_profile(
     db: Annotated[Session, Depends(get_db)],
     tenant: Annotated[DemoTenant, Depends(get_demo_tenant)],
+    background_tasks: BackgroundTasks,
 ) -> DemoChildProfileRead:
     """Development/demo only. One-tap synthetic Hayes profile."""
     try:
         profile = setup_hayes_profile(db, tenant)
         db.commit()
+        _begin_first_win_preparation(db, profile.child.id, background_tasks)
         return profile
     except ProfileSetupError as exc:
         db.rollback()
@@ -189,11 +247,13 @@ def create_custom_demo_profile(
     payload: DemoProfileWrite,
     db: Annotated[Session, Depends(get_db)],
     tenant: Annotated[DemoTenant, Depends(get_demo_tenant)],
+    background_tasks: BackgroundTasks,
 ) -> DemoChildProfileRead:
     """Development/demo only. Custom synthetic profile."""
     try:
         profile = setup_custom_profile(db, tenant, payload)
         db.commit()
+        _begin_first_win_preparation(db, profile.child.id, background_tasks)
         return profile
     except ProfileSetupError as exc:
         db.rollback()
@@ -318,6 +378,51 @@ def read_latest_demo_daily_win(
     return result
 
 
+@router.get("/next-win-state", response_model=NextWinStateRead)
+def read_next_win_state(
+    db: Annotated[Session, Depends(get_db)],
+    tenant: Annotated[DemoTenant, Depends(get_demo_tenant)],
+) -> NextWinStateRead:
+    """Home load: READY Win, preparation status, or first-win preview. No OpenAI."""
+    timer = GenerationTimer()
+    child = require_configured_child(tenant)
+    prep = read_next_win_preparation(db, child)
+    timing = first_win_timing_snapshot(db, child)
+    db.commit()
+    logger.info(
+        "HOME TRACE total=%sms status=%s has_ready=%s model_call=no",
+        timer.total_ms(),
+        prep.status,
+        prep.daily_win is not None,
+    )
+    logger.info(
+        "FIRST WIN TRACE profile_saved=%sms prep_started=+%sms "
+        "terra_completed=+%sms win_ready=+%sms raw_model=%sms",
+        timing.get("profile_saved_ms"),
+        timing.get("preparation_started_ms"),
+        timing.get("terra_completed_ms"),
+        timing.get("win_ready_ms"),
+        timing.get("raw_model_ms"),
+    )
+    return NextWinStateRead(
+        daily_win=prep.daily_win,
+        preparation_status=prep.status,
+        trigger=prep.trigger,
+        generation_stage=prep.generation_stage,
+        focus_preview=prep.focus_preview,
+        coach_preview=list(prep.coach_preview),
+        generated_after_reflection=prep.generated_after_reflection,
+        plan_valid=prep.plan_valid,
+        error_code=prep.error_code,
+        attempt_count=prep.attempt_count,
+        model=prep.model,
+        prompt_version=prep.prompt_version,
+        latency_ms=prep.latency_ms,
+        backend_elapsed_ms=timer.total_ms(),
+        first_win_timing=FirstWinTimingRead.model_validate(timing),
+    )
+
+
 @router.get("/daily-wins/{daily_win_id}", response_model=DemoDailyWinRead)
 def read_demo_daily_win(
     daily_win_id: UUID,
@@ -342,12 +447,14 @@ def create_demo_daily_win_feedback(
     payload: DailyWinFeedbackCreate,
     db: Annotated[Session, Depends(get_db)],
     tenant: Annotated[DemoTenant, Depends(get_demo_tenant)],
+    background_tasks: BackgroundTasks,
 ) -> DemoFeedbackRead:
     """Development/demo only. Not production authorization."""
     child = require_configured_child(tenant)
     try:
         result = submit_demo_feedback(db, daily_win_id, payload, child)
         db.commit()
+        schedule_prepare_after_reflection(child.id, background_tasks.add_task)
         return result
     except FeedbackUnavailableError:
         db.rollback()
@@ -385,6 +492,19 @@ def create_demo_daily_win_feedback(
             detail=CLIENT_FEEDBACK_FAILED,
             error_code="provider_error",
         ) from None
+
+
+@router.get("/weekly-report", response_model=WeeklyCoachReportRead)
+def read_weekly_coach_report(
+    db: Annotated[Session, Depends(get_db)],
+    tenant: Annotated[DemoTenant, Depends(get_demo_tenant)],
+) -> WeeklyCoachReportRead:
+    """Development/demo only. Deterministic weekly synthesis from evidence."""
+    child = require_configured_child(tenant)
+    summary = load_weekly_summary(db, child)
+    db.commit()
+    payload = summary.as_dict()
+    return WeeklyCoachReportRead.model_validate(payload)
 
 
 @router.post("/reset", response_model=DemoResetRead)
@@ -433,3 +553,194 @@ def reset_demo_from_beginning(
             detail=CLIENT_RESET_FAILED,
             error_code="provider_error",
         ) from None
+
+
+@router.get("/pilot/status", response_model=PilotStatusRead)
+def read_pilot_status(
+    db: Annotated[Session, Depends(get_db)],
+) -> PilotStatusRead:
+    """Development-only non-sensitive preflight. Never returns secrets."""
+    db_ok = "ok"
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception:
+        db_ok = "unavailable"
+    settings = get_settings()
+    engine = engine_version_report()
+    prep_available = "unavailable"
+    try:
+        from daily_win_api.domains.daily_wins.preparation import NextWinPreparation
+
+        assert NextWinPreparation is not None
+        prep_available = "available"
+    except Exception:
+        prep_available = "unavailable"
+    return PilotStatusRead(
+        api="ok",
+        db=db_ok,
+        generation_config="configured" if settings.openai_configured else "missing",
+        model=settings.openai_model or DEFAULT_OPENAI_MODEL,
+        curriculum=engine.curriculum_version,
+        placement=engine.placement_policy,
+        scheduler=engine.instruction_scheduler,
+        instruction=engine.instruction_policy,
+        prompt=engine.prompt_version,
+        background_preparation=prep_available,
+    )
+
+
+@router.post("/pilot/guide-timing")
+def write_guide_timing(
+    payload: GuideTimingWrite,
+    tenant: Annotated[DemoTenant, Depends(get_demo_tenant)],
+) -> dict[str, object]:
+    """Development-only Guide dwell. Not learner evidence and not analytics."""
+    child = require_configured_child(tenant)
+    dwell = payload.guide_dwell_ms
+    if (
+        dwell is None
+        and payload.guide_started_at is not None
+        and payload.guide_finished_at is not None
+    ):
+        dwell = max(
+            0,
+            int(
+                (payload.guide_finished_at - payload.guide_started_at).total_seconds()
+                * 1000
+            ),
+        )
+    record_guide_dwell(
+        child.id,
+        dwell_ms=dwell or 0,
+        skipped=payload.guide_skipped,
+        started_at=(
+            None
+            if payload.guide_started_at is None
+            else payload.guide_started_at.isoformat()
+        ),
+        finished_at=(
+            None
+            if payload.guide_finished_at is None
+            else payload.guide_finished_at.isoformat()
+        ),
+    )
+    return {"ok": True}
+
+
+@router.get("/observatory/engine-versions", response_model=EngineVersionReport)
+def read_engine_versions() -> EngineVersionReport:
+    """Development/demo only. Policy and renderer version inventory."""
+    return engine_version_report()
+
+
+@router.get("/observatory/learning-qa", response_model=LearningQaBundle)
+def read_learning_qa(
+    db: Annotated[Session, Depends(get_db)],
+    tenant: Annotated[DemoTenant, Depends(get_demo_tenant)],
+) -> LearningQaBundle:
+    """Development/demo only. Mason's backend-debug bundle."""
+    if tenant.child is None:
+        return LearningQaBundle(
+            engine=engine_version_report(),
+            snapshot=LearnerSnapshot(
+                nickname="(setup required)", academic=[], growth=[]
+            ),
+            graph=CurriculumGraphTrace(strand="", target_skill=None, nodes=[]),
+            setup_required=True,
+        )
+    result = build_learning_qa(db, tenant.child)
+    db.commit()
+    return result
+
+
+@router.get("/observatory/learning-trace", response_model=LearningTrace)
+def read_latest_learning_trace(
+    db: Annotated[Session, Depends(get_db)],
+    tenant: Annotated[DemoTenant, Depends(get_demo_tenant)],
+) -> LearningTrace:
+    """Development/demo only. Authoritative Learning Trace for the latest Win."""
+    child = require_configured_child(tenant)
+    try:
+        result = build_learning_trace(db, child)
+        db.commit()
+        return result
+    except ContextUnavailableError:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=CLIENT_NOT_FOUND) from None
+
+
+@router.get("/observatory/learning-trace/{daily_win_id}", response_model=LearningTrace)
+def read_learning_trace(
+    daily_win_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    tenant: Annotated[DemoTenant, Depends(get_demo_tenant)],
+) -> LearningTrace:
+    """Development/demo only. Authoritative Learning Trace for one Win."""
+    child = require_configured_child(tenant)
+    try:
+        result = build_learning_trace(db, child, daily_win_id)
+        db.commit()
+        return result
+    except ContextUnavailableError:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=CLIENT_NOT_FOUND) from None
+
+
+@router.get("/observatory/learner-snapshot", response_model=LearnerSnapshot)
+def read_learner_snapshot(
+    db: Annotated[Session, Depends(get_db)],
+    tenant: Annotated[DemoTenant, Depends(get_demo_tenant)],
+) -> LearnerSnapshot:
+    """Development/demo only. Derived learner snapshot without raw DB rows."""
+    child = require_configured_child(tenant)
+    result = build_learner_snapshot(db, child)
+    db.commit()
+    return result
+
+
+@router.get("/observatory/curriculum-graph", response_model=CurriculumGraphTrace)
+def read_curriculum_graph(
+    db: Annotated[Session, Depends(get_db)],
+    tenant: Annotated[DemoTenant, Depends(get_demo_tenant)],
+) -> CurriculumGraphTrace:
+    """Development/demo only. Relevant strand graph with learner position."""
+    child = require_configured_child(tenant)
+    try:
+        result = build_curriculum_graph(db, child)
+        db.commit()
+        return result
+    except ContextUnavailableError:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=CLIENT_NOT_FOUND) from None
+
+
+@router.get("/observatory/next-win-preview", response_model=NextWinPreview)
+def read_next_win_preview(
+    db: Annotated[Session, Depends(get_db)],
+    tenant: Annotated[DemoTenant, Depends(get_demo_tenant)],
+) -> NextWinPreview:
+    """Development/demo only. Planner preview. Does not create a Win."""
+    child = require_configured_child(tenant)
+    try:
+        result = build_next_win_preview(db, child)
+        db.commit()
+        return result
+    except ContextUnavailableError:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=CLIENT_NOT_FOUND) from None
+
+
+@router.get("/observatory/renderer-context", response_model=RedactedContextReport)
+def read_redacted_renderer_context(
+    db: Annotated[Session, Depends(get_db)],
+    tenant: Annotated[DemoTenant, Depends(get_demo_tenant)],
+) -> RedactedContextReport:
+    """Development/demo only. Bounded, redacted renderer context."""
+    child = require_configured_child(tenant)
+    try:
+        result = build_redacted_context(db, child)
+        db.commit()
+        return result
+    except ContextUnavailableError:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=CLIENT_NOT_FOUND) from None

@@ -10,7 +10,7 @@ export function Card({
 }: {
   children: ReactNode;
   style?: ViewStyle;
-  tone?: 'surface' | 'soft' | 'highlight';
+  tone?: 'surface' | 'soft' | 'highlight' | 'plain';
 }) {
   return (
     <View
@@ -18,6 +18,7 @@ export function Card({
         styles.card,
         tone === 'soft' && styles.soft,
         tone === 'highlight' && styles.highlight,
+        tone === 'plain' && styles.plain,
         style,
       ]}>
       {children}
@@ -41,5 +42,10 @@ const styles = StyleSheet.create({
   highlight: {
     backgroundColor: colors.highlightSoft,
     borderColor: colors.highlightSoft,
+  },
+  plain: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    padding: 0,
   },
 });

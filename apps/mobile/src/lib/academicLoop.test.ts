@@ -5,10 +5,13 @@ import {
   ACADEMIC_RESULT_OPTIONS,
   SUPPORT_CAPTION,
   asksAboutSetback,
+  asksEngagementQuestion,
   asksForCounts,
   changedTodayCopy,
+  checkCaption,
   countsAreValid,
   hasAcademicProbe,
+  isCanonicalCheckLabel,
 } from './academicLoop.ts';
 import type { DemoDailyWin } from './api/types.ts';
 
@@ -64,8 +67,34 @@ describe('academic reflection mapping', () => {
         ?.label,
       'Did it independently',
     );
-    assert.match(SUPPORT_CAPTION, /no instructional help/);
+    assert.match(SUPPORT_CAPTION, /no help on the check/);
     assert.match(SUPPORT_CAPTION, /one short cue/);
+    for (const option of ACADEMIC_RESULT_OPTIONS) {
+      assert.equal(isCanonicalCheckLabel(option.label), true);
+      assert.doesNotMatch(option.label, /\n/);
+      assert.ok(option.label.length < 42);
+    }
+    assert.equal(
+      checkCaption({
+        prompt_label: 'Can he spell jumped without a hint Independent no help',
+        support_caption:
+          'Independent: no instructional help on this part. Light prompt: one short cue.',
+        what_to_check: 'Can he spell jumped without a hint?',
+        success_looks_like: 'The ending is -ed.',
+        asks_for_counts: false,
+      }),
+      SUPPORT_CAPTION,
+    );
+    assert.doesNotMatch(
+      checkCaption({
+        prompt_label: 'Can he spell jumped without a hint Independent no help',
+        support_caption: 'Independent: no instructional help.',
+        what_to_check: 'x',
+        success_looks_like: 'y',
+        asks_for_counts: false,
+      }),
+      /Independent: no instructional help/,
+    );
   });
 
   it('shows the academic section only when a probe exists', () => {
@@ -108,6 +137,12 @@ describe('academic reflection mapping', () => {
     assert.equal(countsAreValid(0, 0), true);
     assert.equal(countsAreValid(4, 3), false);
     assert.equal(countsAreValid(2, null), false);
+  });
+
+  it('asks engagement only when difficulty is off or a bonus exists', () => {
+    assert.equal(asksEngagementQuestion('about_right', false), false);
+    assert.equal(asksEngagementQuestion('too_hard', false), true);
+    assert.equal(asksEngagementQuestion('about_right', true), true);
   });
 
   it('omits setback unless the win asks for it, and prefers planner change copy', () => {

@@ -209,9 +209,7 @@ def run_terra_luna_bakeoff(
     for case in cases:
         issues = privacy_issues(case.context.model_dump_json())
         if issues:
-            raise SystemExit(
-                f"Bakeoff context {case.id} failed privacy scan: {issues}"
-            )
+            raise SystemExit(f"Bakeoff context {case.id} failed privacy scan: {issues}")
         outputs: dict[str, Any] = {}
         for model in BAKEOFF_MODELS:
             attempted += 1
@@ -290,9 +288,7 @@ def _gateways(*, live: bool, settings: Settings | None) -> dict[str, _Gateway]:
         }
     resolved = settings or get_settings()
     return {
-        model: build_model_gateway(
-            resolved.model_copy(update={"openai_model": model})
-        )
+        model: build_model_gateway(resolved.model_copy(update={"openai_model": model}))
         for model in BAKEOFF_MODELS
     }
 
@@ -373,13 +369,10 @@ def _score_call(
     mode_ok = _mode_fidelity(plan.instruction_mode, draft)
     duration_ok = _duration_valid(plan.duration_minutes, draft)
     materials_ok = all(
-        material.value in case.context.allowed_materials
-        for material in draft.materials
+        material.value in case.context.allowed_materials for material in draft.materials
     )
     safety_ok = _safety_ok(draft)
-    objective_ok = skill_ok and _objective_preserved(
-        plan.assessment_objective, draft
-    )
+    objective_ok = skill_ok and _objective_preserved(plan.assessment_objective, draft)
     burden = parent_burden(draft)
     theme_ok = _theme_not_repeated(draft, case.context.recent_themes)
     hard: list[str] = []
@@ -398,15 +391,17 @@ def _score_call(
     if not objective_ok:
         hard.append("changed_instructional_objective")
     owner = FailureOwner.MODEL_OUTPUT_FAILURE if hard else None
-    parts = estimate_cost_parts(
-        result.model, result.input_tokens, result.output_tokens
+    parts = estimate_cost_parts(result.model, result.input_tokens, result.output_tokens)
+    breakdown = (
+        None
+        if parts is None
+        else {
+            "input_usd": parts.input_usd,
+            "output_usd": parts.output_usd,
+            "total_usd": parts.total_usd,
+            "output_share": parts.output_share,
+        }
     )
-    breakdown = None if parts is None else {
-        "input_usd": parts.input_usd,
-        "output_usd": parts.output_usd,
-        "total_usd": parts.total_usd,
-        "output_share": parts.output_share,
-    }
     return CallRecord(
         model=result.model,
         attempts=attempts,
@@ -521,9 +516,7 @@ def _token_overlap(left: str, right: str) -> bool:
 
 def _tokens(text: str) -> set[str]:
     return {
-        word
-        for word in re.findall(r"[a-z0-9]{3,}", text.lower())
-        if word not in _STOP
+        word for word in re.findall(r"[a-z0-9]{3,}", text.lower()) if word not in _STOP
     }
 
 
@@ -596,9 +589,7 @@ def _summarize(rows: list[CallRecord]) -> dict[str, Any]:
                 items, "instruction_mode_fidelity"
             ),
             "duration_valid": _flag_count(items, "duration_valid"),
-            "material_allowlist_valid": _flag_count(
-                items, "material_allowlist_valid"
-            ),
+            "material_allowlist_valid": _flag_count(items, "material_allowlist_valid"),
             "deterministic_safety": _flag_count(items, "deterministic_safety"),
             "tokens": {
                 "input_mean": _mean(inputs),
@@ -694,9 +685,7 @@ def _recommend(summary: dict[str, Any], *, live: bool) -> dict[str, Any]:
     terra_hard = terra["hard_failure_cases"]
     luna_hard = luna["hard_failure_cases"]
     schema_equal = terra["schema_valid"] == luna["schema_valid"]
-    skill_equal = (
-        terra["target_skill_fidelity"] == luna["target_skill_fidelity"]
-    )
+    skill_equal = terra["target_skill_fidelity"] == luna["target_skill_fidelity"]
     probe_equal = (
         terra["assessment_probe_fidelity"] == luna["assessment_probe_fidelity"]
     )
@@ -749,9 +738,7 @@ def _recommend(summary: dict[str, Any], *, live: bool) -> dict[str, Any]:
     }
 
 
-def _review_markdown(
-    cases: tuple[BakeoffCase, ...], rows: list[dict[str, Any]]
-) -> str:
+def _review_markdown(cases: tuple[BakeoffCase, ...], rows: list[dict[str, Any]]) -> str:
     by_id = {row["id"]: row for row in rows}
     lines = [
         "# Daily Win renderer bakeoff — blinded human review",
@@ -795,10 +782,7 @@ def _review_markdown(
                     (plan.get("assessment_probe") or {}).get("observable_task") or ""
                 ),
                 "- Theme constraints: "
-                + (
-                    ", ".join(plan.get("engagement_theme_constraints") or [])
-                    or "none"
-                ),
+                + (", ".join(plan.get("engagement_theme_constraints") or []) or "none"),
                 "",
                 "### OUTPUT A",
                 "",
@@ -865,9 +849,7 @@ def _format_win(draft: dict[str, Any] | None) -> str:
     )
 
 
-def _reveal_payload(
-    cases: tuple[BakeoffCase, ...], stamp: str
-) -> dict[str, Any]:
+def _reveal_payload(cases: tuple[BakeoffCase, ...], stamp: str) -> dict[str, Any]:
     mapping = {}
     for index, case in enumerate(cases, start=1):
         assignment = arm_assignment(case.id)

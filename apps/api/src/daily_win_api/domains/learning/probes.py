@@ -123,14 +123,12 @@ _PROBES: dict[str, dict[str, object]] = {
         "math.subtraction.within_10",
         ProbeType.COUNTED_ITEMS,
         task=(
-            "Ask one subtraction fact whose difference is 10 or less "
-            "(objects allowed)."
+            "Ask one subtraction fact whose difference is 10 or less (objects allowed)."
         ),
         outcome="Child states the correct difference.",
         success="Correct independently on the first or second try.",
         false_positive=(
-            "An addition fact, or the parent removing objects while naming "
-            "the answer."
+            "An addition fact, or the parent removing objects while naming the answer."
         ),
         counts="1-2 items",
     ),
@@ -208,8 +206,7 @@ _PROBES: dict[str, dict[str, object]] = {
         ),
         success="Independent oral reading of that sentence from print.",
         false_positive=(
-            "Reciting a memorized line without looking, or the parent reading "
-            "it first."
+            "Reciting a memorized line without looking, or the parent reading it first."
         ),
     ),
     "reading.vocabulary.context_clues": _probe(
@@ -263,6 +260,50 @@ _PROBES: dict[str, dict[str, object]] = {
         false_positive=(
             "Repeating a stated detail, or an answer with no link to the text."
         ),
+    ),
+    "writing.spelling.cvc": _probe(
+        "writing.spelling.cvc",
+        ProbeType.PRODUCE_SAMPLE,
+        task=(
+            "Say one CVC word (for example cat, sun, or map). Ask the child "
+            "to write or spell it aloud. Do not show the word."
+        ),
+        outcome="Child produces the conventional CVC spelling.",
+        success="Independent correct spelling without copying a model.",
+        false_positive="Copying the word, or a different word.",
+    ),
+    "writing.spelling.patterns": _probe(
+        "writing.spelling.patterns",
+        ProbeType.PRODUCE_SAMPLE,
+        task=(
+            "Say one common pattern word (for example rain, boat, or shop). "
+            "Ask the child to write it. Do not show the word."
+        ),
+        outcome="Child produces the conventional pattern spelling.",
+        success="Independent correct spelling of that pattern word.",
+        false_positive="A different word, or copying a visible model.",
+    ),
+    "writing.spelling.endings_suffixes": _probe(
+        "writing.spelling.endings_suffixes",
+        ProbeType.PRODUCE_SAMPLE,
+        task=(
+            "Say one familiar inflected word (jumped, playing, or cats). "
+            "Ask the child to write it. Do not show the word."
+        ),
+        outcome="Child includes the base and the ending.",
+        success="Independent correct spelling of the inflected word.",
+        false_positive="The base only, or copying a model.",
+    ),
+    "writing.spelling.multisyllabic_irregular": _probe(
+        "writing.spelling.multisyllabic_irregular",
+        ProbeType.PRODUCE_SAMPLE,
+        task=(
+            "Say one grade-appropriate irregular or two-syllable word "
+            "(because, friend, or happy). Ask the child to write it."
+        ),
+        outcome="Child produces a conventional or close conventional spelling.",
+        success="Independent spelling of that longer or irregular word.",
+        false_positive="A different word, or copying a model.",
     ),
     "writing.spelling.high_frequency": _probe(
         "writing.spelling.high_frequency",

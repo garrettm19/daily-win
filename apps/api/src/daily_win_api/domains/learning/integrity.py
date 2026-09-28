@@ -133,8 +133,7 @@ def _planner_reachability_errors() -> list[str]:
                 errors.append(f"unsupported_selected:{code}")
             continue
         states = {
-            prereq: PlannerSkillState(prereq, retained)
-            for prereq in _all_prereqs(code)
+            prereq: PlannerSkillState(prereq, retained) for prereq in _all_prereqs(code)
         }
         plan = _plan_for(code, states)
         if plan.primary_skill_code != code:

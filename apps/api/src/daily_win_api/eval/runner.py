@@ -144,6 +144,9 @@ def build_parser() -> argparse.ArgumentParser:
             "quality",
             "decision",
             "integrity",
+            "longitudinal",
+            "coaching",
+            "latency",
             "all",
         ),
         help=(
@@ -179,6 +182,40 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Reveal mapping JSON for --summarize-review.",
     )
+    parser.add_argument(
+        "--latency-baseline",
+        action="store_true",
+        help=(
+            "Run the five-mode generation latency baseline. Fake unless --live. "
+            "Does not change Terra as the product default."
+        ),
+    )
+    parser.add_argument(
+        "--terra-config",
+        action="store_true",
+        help=(
+            "Reasoning-effort and optional service-tier calibration. "
+            "Maximum 12 live calls. Does not change production config."
+        ),
+    )
+    parser.add_argument(
+        "--expand-terra-review",
+        nargs="?",
+        const="DEFAULT",
+        metavar="PATH",
+        help=(
+            "Rebuild the blinded A/B/C review from stored Terra-config "
+            "metrics. No live calls. Defaults to 20260921T201524Z."
+        ),
+    )
+    parser.add_argument(
+        "--terra-priority",
+        action="store_true",
+        help=(
+            "Exactly 3 Terra medium + requested-fast calls. "
+            "Does not repeat the 12-call batch."
+        ),
+    )
     return parser
 
 
@@ -192,8 +229,12 @@ def main(argv: list[str] | None = None) -> None:
         from daily_win_api.eval.scoring import write_results
 
         review_path = Path(args.summarize_review)
-        reveal_path = Path(args.reveal) if args.reveal else review_path.with_name(
-            review_path.name.replace("-review.md", "-reveal.json")
+        reveal_path = (
+            Path(args.reveal)
+            if args.reveal
+            else review_path.with_name(
+                review_path.name.replace("-review.md", "-reveal.json")
+            )
         )
         if not reveal_path.exists():
             reveal_path = RESULTS_DIR / "20260919T211946Z-terra-luna-reveal.json"
@@ -201,9 +242,7 @@ def main(argv: list[str] | None = None) -> None:
             review_path.read_text(encoding="utf-8"),
             load_reveal(reveal_path),
         )
-        out = review_path.with_name(
-            review_path.stem + "-summary.json"
-        )
+        out = review_path.with_name(review_path.stem + "-summary.json")
         write_results(out, summary)
         print(f"Wrote {out}")
         if not summary["complete"]:
@@ -233,6 +272,43 @@ def main(argv: list[str] | None = None) -> None:
         paths = run_terra_luna_bakeoff(live=args.live)
         for label, path in paths.items():
             print(f"Wrote {label}: {path}")
+        return
+    if args.expand_terra_review:
+        from daily_win_api.eval.terra_config import (
+            EXISTING_LIVE_STEM,
+            expand_blind_review_from_artifact,
+        )
+
+        source = (
+            RESULTS_DIR / f"{EXISTING_LIVE_STEM}.json"
+            if args.expand_terra_review == "DEFAULT"
+            else Path(args.expand_terra_review)
+        )
+        path = expand_blind_review_from_artifact(source)
+        print(f"Wrote {path}")
+        return
+    if args.terra_priority:
+        from daily_win_api.eval.terra_config import write_medium_priority_probe
+
+        paths = write_medium_priority_probe(RESULTS_DIR, live=args.live)
+        for label, path in paths.items():
+            print(f"Wrote {label}: {path}")
+        return
+    if args.terra_config:
+        from daily_win_api.eval.terra_config import write_terra_config
+
+        paths = write_terra_config(RESULTS_DIR, live=args.live)
+        for label, path in paths.items():
+            print(f"Wrote {label}: {path}")
+        return
+    if args.latency_baseline:
+        from daily_win_api.eval.latency import write_latency_baseline
+
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        mode = "live" if args.live else "fake"
+        path = RESULTS_DIR / f"{stamp}-latency-baseline-{mode}.json"
+        write_latency_baseline(path, live=args.live)
+        print(f"Wrote {path}")
         return
     if args.suite:
         path = _run_suite(args.suite)

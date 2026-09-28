@@ -43,7 +43,7 @@ Prove one thing exceptionally clearly: **parent feedback changes the system's un
 11. **Child narrative/profile content must not appear** in standard logs or analytics.
 12. Preserve support for: multiple caregivers, child/account deletion, auditability, prompt/model versioning, learner-state reconstruction, and future provider replacement.
 13. **Do not introduce unnecessary infrastructure** (Kubernetes, Kafka, Redis, vector databases, microservices) unless a demonstrated future requirement justifies them.
-14. **The LLM creates the experience. Daily Win decides the learning.** InstructionPlanner owns the instructional objective. Prompt files v1–v4 stay immutable; current renderer is v5.
+14. **The LLM creates the experience. Daily Win decides the learning.** InstructionScheduler (`instruction_scheduler_v1`) chooses which active academic goal gets today's slot. InstructionPlanner owns the instructional objective. Prompt files v1–v4 stay immutable; current renderer is v5.
 
 ## Approved technology
 

@@ -30,7 +30,7 @@ Each case specifies:
 
 **EXPECTED:** target skill, mode, difficulty, scaffold, reason-code subset, assessment objective.
 
-The planner must match. Important cases also list **why-not** skills the planner must not select.
+The planner golden cases evaluate frozen `plan_instruction_v3()`. Current production planning is `instruction_scheduler_v1` + `instruction_policy_v4`. See [instruction-scheduling.md](instruction-scheduling.md).
 
 Coverage:
 

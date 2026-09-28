@@ -64,6 +64,12 @@ export const type = {
     textTransform: 'uppercase',
     color: colors.textSecondary,
   } satisfies TextStyle,
+  metric: {
+    fontFamily: fontFamily.heading,
+    fontSize: 22,
+    lineHeight: 28,
+    color: colors.textPrimary,
+  } satisfies TextStyle,
   button: {
     fontFamily: fontFamily.body,
     fontSize: 17,

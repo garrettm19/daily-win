@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import time
 from typing import Any
 
@@ -14,6 +16,7 @@ from openai import (
     RateLimitError,
 )
 
+from daily_win_api.ai.delivery import GenerationDelivery
 from daily_win_api.ai.exceptions import ModelGatewayError, ModelGatewaySchemaError
 from daily_win_api.ai.prompts.current import (
     PROMPT_VERSION,
@@ -32,29 +35,51 @@ PROVIDER_NAME = "openai"
 class OpenAIModelGateway:
     """OpenAI Responses API implementation. Domain code must not import this."""
 
-    def __init__(self, api_key: str, model: str, client: Any | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        client: Any | None = None,
+        *,
+        reasoning_effort: str | None = None,
+        service_tier: str | None = None,
+    ) -> None:
         self._model = model
         self._client = client or OpenAI(api_key=api_key)
+        self._reasoning_effort = reasoning_effort
+        self._service_tier = service_tier
+        self._generation_intent: str | None = None
+
+    def bind_delivery(self, delivery: GenerationDelivery) -> OpenAIModelGateway:
+        self._reasoning_effort = delivery.reasoning_effort
+        self._service_tier = delivery.requested_service_tier
+        self._generation_intent = delivery.intent
+        return self
 
     def generate_daily_win(
         self, context: DailyWinModelContext
     ) -> DailyWinGenerationResult:
         started = time.perf_counter()
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "input": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": build_user_prompt(
+                        context.model_dump_json(exclude_none=False)
+                    ),
+                },
+            ],
+            "text_format": DailyWinDraft,
+            "store": False,
+        }
+        if self._reasoning_effort:
+            kwargs["reasoning"] = {"effort": self._reasoning_effort}
+        if self._service_tier:
+            kwargs["service_tier"] = self._service_tier
         try:
-            response = self._client.responses.parse(
-                model=self._model,
-                input=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {
-                        "role": "user",
-                        "content": build_user_prompt(
-                            context.model_dump_json(exclude_none=False)
-                        ),
-                    },
-                ],
-                text_format=DailyWinDraft,
-                store=False,
-            )
+            response = self._client.responses.parse(**kwargs)
         except ModelGatewayError:
             raise
         except Exception as exc:
@@ -75,6 +100,12 @@ class OpenAIModelGateway:
             output_tokens=_usage_value(usage, "output_tokens"),
             total_tokens=_usage_value(usage, "total_tokens"),
             latency_ms=latency_ms,
+            cached_input_tokens=_cached_input_tokens(usage),
+            reasoning_tokens=_reasoning_tokens(usage),
+            service_tier=_response_service_tier(response, self._service_tier),
+            requested_service_tier=self._service_tier,
+            reasoning_effort=self._reasoning_effort,
+            generation_intent=self._generation_intent,
         )
 
 
@@ -132,8 +163,39 @@ def _openai_body_code(exc: BaseException) -> str | None:
     return None
 
 
+def _response_service_tier(response: Any, requested: str | None) -> str | None:
+    returned = getattr(response, "service_tier", None)
+    if isinstance(returned, str) and returned:
+        return returned
+    return requested
+
+
 def _usage_value(usage: Any, field: str) -> int | None:
     if usage is None:
         return None
     value = getattr(usage, field, None)
+    return int(value) if value is not None else None
+
+
+def _cached_input_tokens(usage: Any) -> int | None:
+    if usage is None:
+        return None
+    details = getattr(usage, "input_tokens_details", None)
+    if details is None and isinstance(usage, dict):
+        details = usage.get("input_tokens_details")
+    cached = getattr(details, "cached_tokens", None) if details is not None else None
+    if cached is None and isinstance(details, dict):
+        cached = details.get("cached_tokens")
+    return int(cached) if cached is not None else None
+
+
+def _reasoning_tokens(usage: Any) -> int | None:
+    if usage is None:
+        return None
+    details = getattr(usage, "output_tokens_details", None)
+    if details is None and isinstance(usage, dict):
+        details = usage.get("output_tokens_details")
+    value = getattr(details, "reasoning_tokens", None) if details is not None else None
+    if value is None and isinstance(details, dict):
+        value = details.get("reasoning_tokens")
     return int(value) if value is not None else None

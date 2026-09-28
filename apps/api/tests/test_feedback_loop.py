@@ -86,10 +86,10 @@ def _persistence_skill(session) -> Skill:
 
 
 def test_feedback_is_persisted_correctly(demo_db) -> None:
-    generate_demo_daily_win(demo_db, FakeModelGateway())
+    generated = generate_demo_daily_win(demo_db, FakeModelGateway())
     child = get_demo_child(demo_db)
     assert child is not None
-    win = demo_db.scalars(select(DailyWin).order_by(DailyWin.created_at.desc())).first()
+    win = demo_db.get(DailyWin, generated.id)
     assert win is not None
 
     result = submit_demo_feedback(demo_db, win.id, CONTINUED_PAYLOAD)
@@ -126,7 +126,14 @@ def test_one_feedback_per_win_is_enforced(demo_db) -> None:
     assert second.status_code == 409
     assert second.json()["error_code"] == "already_submitted"
     assert "household_id" not in first.json()
-    assert demo_db.scalar(select(func.count()).select_from(DailyWinFeedback)) == 1
+    assert (
+        demo_db.scalar(
+            select(func.count())
+            .select_from(DailyWinFeedback)
+            .where(DailyWinFeedback.daily_win_id == UUID(win_id))
+        )
+        == 1
+    )
 
 
 def test_feedback_cannot_target_another_household_win(demo_db) -> None:
@@ -142,12 +149,19 @@ def test_feedback_cannot_target_another_household_win(demo_db) -> None:
     )
     assert response.status_code == 404
     assert response.json()["error_code"] == "demo_unavailable"
-    assert demo_db.scalar(select(func.count()).select_from(DailyWinFeedback)) == 0
+    assert (
+        demo_db.scalar(
+            select(func.count())
+            .select_from(DailyWinFeedback)
+            .where(DailyWinFeedback.daily_win_id == other_win.id)
+        )
+        == 0
+    )
 
 
 def test_categorical_feedback_creates_canonical_learning_events(demo_db) -> None:
-    generate_demo_daily_win(demo_db, FakeModelGateway())
-    win = demo_db.scalars(select(DailyWin).order_by(DailyWin.created_at.desc())).first()
+    generated = generate_demo_daily_win(demo_db, FakeModelGateway())
+    win = demo_db.get(DailyWin, generated.id)
     assert win is not None
     result = submit_demo_feedback(demo_db, win.id, CONTINUED_PAYLOAD)
 
@@ -180,8 +194,8 @@ def test_categorical_feedback_creates_canonical_learning_events(demo_db) -> None
 
 
 def test_no_setback_does_not_manufacture_persistence_evidence(demo_db) -> None:
-    generate_demo_daily_win(demo_db, FakeModelGateway())
-    win = demo_db.scalars(select(DailyWin).order_by(DailyWin.created_at.desc())).first()
+    generated = generate_demo_daily_win(demo_db, FakeModelGateway())
+    win = demo_db.get(DailyWin, generated.id)
     assert win is not None
     payload = CONTINUED_PAYLOAD.model_copy(
         update={
@@ -205,8 +219,8 @@ def test_no_setback_does_not_manufacture_persistence_evidence(demo_db) -> None:
 
 
 def test_continued_after_prompt_maps_to_retry_after_prompt(demo_db) -> None:
-    generate_demo_daily_win(demo_db, FakeModelGateway())
-    win = demo_db.scalars(select(DailyWin).order_by(DailyWin.created_at.desc())).first()
+    generated = generate_demo_daily_win(demo_db, FakeModelGateway())
+    win = demo_db.get(DailyWin, generated.id)
     assert win is not None
     result = submit_demo_feedback(demo_db, win.id, CONTINUED_PAYLOAD)
     assert result.learner_state.skill_code == PERSISTENCE_SKILL_CODE
@@ -220,8 +234,8 @@ def test_continued_after_prompt_maps_to_retry_after_prompt(demo_db) -> None:
 
 
 def test_state_links_to_exact_source_event(demo_db) -> None:
-    generate_demo_daily_win(demo_db, FakeModelGateway())
-    win = demo_db.scalars(select(DailyWin).order_by(DailyWin.created_at.desc())).first()
+    generated = generate_demo_daily_win(demo_db, FakeModelGateway())
+    win = demo_db.get(DailyWin, generated.id)
     assert win is not None
     result = submit_demo_feedback(demo_db, win.id, CONTINUED_PAYLOAD)
     observation = demo_db.scalars(
@@ -249,8 +263,8 @@ def test_state_links_to_exact_source_event(demo_db) -> None:
 
 
 def test_state_rebuilds_deterministically_from_events(demo_db) -> None:
-    generate_demo_daily_win(demo_db, FakeModelGateway())
-    win = demo_db.scalars(select(DailyWin).order_by(DailyWin.created_at.desc())).first()
+    generated = generate_demo_daily_win(demo_db, FakeModelGateway())
+    win = demo_db.get(DailyWin, generated.id)
     assert win is not None
     submit_demo_feedback(demo_db, win.id, CONTINUED_PAYLOAD)
     child = get_demo_child(demo_db)
@@ -275,8 +289,8 @@ def test_state_rebuilds_deterministically_from_events(demo_db) -> None:
 
 
 def test_fewer_than_three_observations_is_insufficient_data(demo_db) -> None:
-    generate_demo_daily_win(demo_db, FakeModelGateway())
-    win = demo_db.scalars(select(DailyWin).order_by(DailyWin.created_at.desc())).first()
+    generated = generate_demo_daily_win(demo_db, FakeModelGateway())
+    win = demo_db.get(DailyWin, generated.id)
     assert win is not None
     result = submit_demo_feedback(demo_db, win.id, CONTINUED_PAYLOAD)
     assert result.learner_state.direction == "insufficient_data"
@@ -335,8 +349,8 @@ def test_adaptive_fake_win_includes_adaptation_summary(demo_db) -> None:
     draft = adaptive_daily_win_draft("Hayes")
     assert draft.adaptation_summary is not None
     assert "strong persistence" not in draft.adaptation_summary.lower()
-    generate_demo_daily_win(demo_db, FakeModelGateway())
-    win = demo_db.scalars(select(DailyWin).order_by(DailyWin.created_at.desc())).first()
+    generated = generate_demo_daily_win(demo_db, FakeModelGateway())
+    win = demo_db.get(DailyWin, generated.id)
     assert win is not None
     submit_demo_feedback(demo_db, win.id, CONTINUED_PAYLOAD)
     second = generate_demo_daily_win(
@@ -390,8 +404,14 @@ def test_transaction_rollback_prevents_partial_feedback_state(
     client = DemoClient(application)
     client.setup_hayes()
     win_id = client.post("/api/v1/demo/daily-wins/generate").json()["id"]
-    before_feedback = _count(demo_db, DailyWinFeedback)
-    before_events = _count(demo_db, LearningEvent)
+    win_uuid = UUID(win_id)
+    before_feedback = demo_db.scalar(
+        select(func.count())
+        .select_from(DailyWinFeedback)
+        .where(DailyWinFeedback.daily_win_id == win_uuid)
+    )
+    child_id = UUID(client.get("/api/v1/demo/child-profile").json()["child"]["id"])
+    before_events = _count(demo_db, LearningEvent, child_id=child_id)
 
     def boom(*_args, **_kwargs):
         raise RuntimeError("induced failure")
@@ -405,8 +425,15 @@ def test_transaction_rollback_prevents_partial_feedback_state(
     )
     assert response.status_code == 500
     assert response.json()["error_code"] == "provider_error"
-    assert _count(demo_db, DailyWinFeedback) == before_feedback
-    assert _count(demo_db, LearningEvent) == before_events
+    assert (
+        demo_db.scalar(
+            select(func.count())
+            .select_from(DailyWinFeedback)
+            .where(DailyWinFeedback.daily_win_id == win_uuid)
+        )
+        == before_feedback
+    )
+    assert _count(demo_db, LearningEvent, child_id=child_id) == before_events
     win = demo_db.get(DailyWin, UUID(win_id))
     assert win is not None
     state = demo_db.scalars(

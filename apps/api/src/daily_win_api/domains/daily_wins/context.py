@@ -14,6 +14,7 @@ from daily_win_api.ai.schemas import (
     ParentReportedBaselineContext,
 )
 from daily_win_api.domains.children.models import Child, ChildBaseline
+from daily_win_api.domains.daily_wins.latency import span
 from daily_win_api.domains.daily_wins.models import DailyWin
 from daily_win_api.domains.daily_wins.renderer_contract import plan_with_contracts
 from daily_win_api.domains.daily_wins.schemas import (
@@ -30,9 +31,11 @@ from daily_win_api.domains.learning.academic import (
     EVENT_TYPE_SKILL_ASSESSMENT,
     AcademicStateSnapshot,
 )
+from daily_win_api.domains.learning.bonus import low_engagement_categories_from_payloads
 from daily_win_api.domains.learning.enums import AcademicBand
 from daily_win_api.domains.learning.models import (
     ChildGoal,
+    InstructionPlanRecord,
     LearnerSkillState,
     LearningEvent,
     Skill,
@@ -50,7 +53,7 @@ from daily_win_api.domains.learning.signals import (
     EVENT_TYPE_SKILL_OBSERVATION,
     map_setback_to_signal,
 )
-from daily_win_api.domains.learning.taxonomy import is_academic_code
+from daily_win_api.domains.learning.taxonomy import is_academic_code, strand_code_for
 
 
 @dataclass(frozen=True)
@@ -141,6 +144,7 @@ def prepare_daily_win_generation(session: Session, child: Child) -> GenerationPr
         for win in prior_wins
         if win.primary_skill_id in prior_skills
     )
+    history = load_recent_instruction_history(session, child)
     plan = plan_instruction(
         PlannerInput(
             nickname=child.nickname,
@@ -154,31 +158,41 @@ def prepare_daily_win_generation(session: Session, child: Child) -> GenerationPr
                 for goal, skill in goal_rows
             ),
             states=states,
-            recent_skill_codes=recent_skill_codes,
+            recent_skill_codes=history[0] or recent_skill_codes,
             recent_themes=recent_themes,
             now=_aware_now(events, prior_wins),
+            recent_instruction_modes=history[1],
+            recent_goal_codes=history[2],
+            low_engagement_categories=low_engagement_categories_from_payloads(
+                tuple(
+                    event.payload
+                    for event in events
+                    if isinstance(event.payload, dict)
+                )
+            ),
         )
     )
     allowed = _allowed_from_plan(plan)
     evidence = _bounded_evidence(events, event_skills)
-    context = DailyWinModelContext(
-        nickname=child.nickname,
-        parent_reported_baseline=ParentReportedBaselineContext(
-            age_years=baseline.age_years,
-            grade=baseline.grade,
-            interests=list(baseline.interests),
-            strengths=list(baseline.strengths),
-            current_difficulties=list(baseline.current_difficulties),
-            motivators=list(baseline.motivators),
-            response_to_difficulty=baseline.response_to_difficulty,
-            preferred_activity_minutes=baseline.preferred_activity_minutes,
-        ),
-        instruction_plan=instruction_plan_context(plan),
-        bounded_evidence_summaries=evidence,
-        recent_themes=list(recent_themes),
-        allowed_skill_codes=allowed,
-        allowed_materials=[material.value for material in Material],
-    )
+    with span("prompt_context"):
+        context = DailyWinModelContext(
+            nickname=child.nickname,
+            parent_reported_baseline=ParentReportedBaselineContext(
+                age_years=baseline.age_years,
+                grade=baseline.grade,
+                interests=list(baseline.interests),
+                strengths=list(baseline.strengths),
+                current_difficulties=list(baseline.current_difficulties),
+                motivators=list(baseline.motivators),
+                response_to_difficulty=baseline.response_to_difficulty,
+                preferred_activity_minutes=baseline.preferred_activity_minutes,
+            ),
+            instruction_plan=instruction_plan_context(plan),
+            bounded_evidence_summaries=evidence,
+            recent_themes=list(recent_themes),
+            allowed_skill_codes=allowed,
+            allowed_materials=[material.value for material in Material],
+        )
     skill_state_ids = [
         row.id
         for row in session.scalars(
@@ -296,6 +310,53 @@ def _aware_now(events: list[LearningEvent], wins: list[DailyWin]) -> datetime:
 
     stamps = [event.occurred_at for event in events] + [win.created_at for win in wins]
     return max(stamps) if stamps else dt.now(UTC)
+
+
+def load_recent_instruction_history(
+    session: Session, child: Child, *, limit: int = 8, before=None
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    stmt = (
+        select(InstructionPlanRecord)
+        .where(
+            InstructionPlanRecord.child_id == child.id,
+            InstructionPlanRecord.household_id == child.household_id,
+        )
+        .order_by(InstructionPlanRecord.created_at.desc())
+        .limit(limit)
+    )
+    if before is not None:
+        stmt = stmt.where(InstructionPlanRecord.created_at < before)
+    rows = session.scalars(stmt).all()
+    skills: list[str] = []
+    modes: list[str] = []
+    goals: list[str] = []
+    skill_ids = [row.primary_skill_id for row in rows]
+    by_id = (
+        {
+            skill.id: skill
+            for skill in session.scalars(select(Skill).where(Skill.id.in_(skill_ids)))
+        }
+        if skill_ids
+        else {}
+    )
+    for row in rows:
+        skill = by_id.get(row.primary_skill_id)
+        payload = row.plan if isinstance(row.plan, dict) else {}
+        code = (
+            skill.code
+            if skill is not None
+            else str(payload.get("primary_skill_code") or "")
+        )
+        if not code:
+            continue
+        skills.append(code)
+        modes.append(row.instruction_mode)
+        scheduled = payload.get("scheduled_goal_code")
+        if isinstance(scheduled, str) and scheduled:
+            goals.append(scheduled)
+        else:
+            goals.append(strand_code_for(code))
+    return tuple(skills), tuple(modes), tuple(goals)
 
 
 def _parse_dt(value: object) -> datetime | None:

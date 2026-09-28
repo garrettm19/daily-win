@@ -8,6 +8,7 @@ from daily_win_api.db.session import SessionLocal
 from daily_win_api.dev.models import DemoSession
 from daily_win_api.dev.seed import seed_development_data
 from daily_win_api.domains.children.models import Child, ChildBaseline
+from daily_win_api.domains.daily_wins.first_win import clear_guide_dwell
 from daily_win_api.domains.daily_wins.models import AiRun, DailyWin, DailyWinFeedback
 from daily_win_api.domains.learning.models import (
     ChildGoal,
@@ -81,6 +82,7 @@ def reset_demo_derived_data(
             LearnerSkillState.household_id == household_id,
         )
     )
+    clear_guide_dwell(child_id)
     session.flush()
 
 

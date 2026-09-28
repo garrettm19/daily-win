@@ -4,6 +4,8 @@ from collections.abc import Iterator
 from daily_win_api.ai.schemas import DailyWinDraft
 from daily_win_api.domains.daily_wins.schemas import SafetyRejectedError
 
+SAFETY_VALIDATOR_VERSION = "safety_rules_v1"
+
 # Stable rule identifiers. These may appear as development-only `dev_reason`.
 SHARP_OBJECT = "sharp_object"
 FIRE_OR_HEAT = "fire_or_heat"

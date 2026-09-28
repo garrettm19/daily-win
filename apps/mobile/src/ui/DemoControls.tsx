@@ -1,8 +1,9 @@
-import { useRouter } from 'expo-router';
+import { type Href, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useBackendStatus } from '@/hooks/useBackendStatus';
+import { useParentPilotView } from '@/hooks/useParentPilotView';
 import { backendStatusLabel } from '@/lib/api/backendStatus';
 import { resetDemoActivityHistory, restartDemoSession } from '@/lib/api/demo';
 import { describeCaughtError, type ApiErrorKind } from '@/lib/api/parentErrors';
@@ -14,6 +15,7 @@ import {
   subscribeTesterFingerprint,
 } from '@/lib/demoSession';
 import { hapticSuccess } from '@/lib/haptics';
+import { setParentPilotView } from '@/lib/pilotView';
 import { colors, radius, space, type } from '@/theme';
 import { DevError } from '@/ui/DevError';
 
@@ -62,8 +64,9 @@ export function DemoControls({
   const [errorKind, setErrorKind] = useState<ApiErrorKind | null>(null);
   const resetLock = useRef(false);
   const busy = resetting !== null || disabled;
+  const parentPilotView = useParentPilotView();
 
-  if (!__DEV__) {
+  if (!__DEV__ || parentPilotView) {
     return null;
   }
 
@@ -92,7 +95,7 @@ export function DemoControls({
       return;
     }
     Alert.alert(
-      'Restart demo from beginning?',
+      'Start fresh parent pilot?',
       'This deletes this session’s demo profile and activity history. You will return to the first screen. Other testers are not affected.',
       [
         { text: 'Cancel', style: 'cancel' },
@@ -106,7 +109,7 @@ export function DemoControls({
               [
                 { text: 'Cancel', style: 'cancel' },
                 {
-                  text: 'Restart from beginning',
+                  text: 'Start fresh parent pilot',
                   style: 'destructive',
                   onPress: () => {
                     void runRestart();
@@ -198,12 +201,24 @@ export function DemoControls({
       />
       <MutedAction
         label={
-          resetting === 'session' ? 'Restarting…' : 'Restart demo from beginning'
+          resetting === 'session' ? 'Starting fresh…' : 'Start fresh parent pilot'
         }
-        accessibilityLabel="Restart demo from beginning"
+        accessibilityLabel="Start fresh parent pilot"
         disabled={busy}
         busy={resetting === 'session'}
         onPress={confirmRestart}
+      />
+      <MutedAction
+        label="Turn on Parent Pilot View"
+        accessibilityLabel="Turn on Parent Pilot View"
+        disabled={busy}
+        onPress={() => setParentPilotView(true)}
+      />
+      <MutedAction
+        label="Learning QA"
+        accessibilityLabel="Open learning QA"
+        disabled={busy}
+        onPress={() => router.push('/learning-qa' as Href)}
       />
       <MutedAction
         label="Test feedback"

@@ -1,6 +1,7 @@
 import { StyleSheet, Text } from 'react-native';
 
 import { diagnosticLabel, type ApiErrorKind } from '@/lib/api/parentErrors';
+import { isParentPilotView } from '@/lib/pilotView';
 import { colors, type } from '@/theme';
 
 export function DevError({
@@ -10,7 +11,7 @@ export function DevError({
   code?: string | null;
   kind?: ApiErrorKind | null;
 }) {
-  if (!__DEV__) {
+  if (!__DEV__ || isParentPilotView()) {
     return null;
   }
   const diagnostic = diagnosticLabel(kind);

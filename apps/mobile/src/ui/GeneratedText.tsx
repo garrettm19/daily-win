@@ -1,5 +1,6 @@
 import { StyleSheet, Text, type TextProps } from 'react-native';
 
+import { normalizeDisplayText } from '@/lib/displayNormalize';
 import { colors, type } from '@/theme';
 
 export function GeneratedText({
@@ -18,10 +19,12 @@ export function GeneratedText({
         : variant === 'emphasized'
           ? type.bodyEmphasized
           : type.body;
+  const content =
+    typeof children === 'string' ? normalizeDisplayText(children) : children;
 
   return (
     <Text {...rest} style={[styles.base, variantStyle, style]}>
-      {children}
+      {content}
     </Text>
   );
 }

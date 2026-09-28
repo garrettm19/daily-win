@@ -1,6 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { hapticSelection } from '@/lib/haptics';
 import { colors, motion, radius, type } from '@/theme';
 import { Icon } from '@/ui/Icon';
 
@@ -23,10 +22,7 @@ export function ChoiceChip({
       accessibilityState={{ selected, disabled }}
       accessibilityLabel={selected ? `${label}, selected` : label}
       disabled={disabled}
-      onPress={() => {
-        hapticSelection();
-        onPress();
-      }}
+      onPress={onPress}
       style={({ pressed }) => [
         styles.chip,
         block && styles.block,

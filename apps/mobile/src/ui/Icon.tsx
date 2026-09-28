@@ -12,7 +12,8 @@ export type IconName =
   | 'walk-outline'
   | 'leaf-outline'
   | 'time-outline'
-  | 'person-outline';
+  | 'person-outline'
+  | 'calendar-outline';
 
 type GlyphProps = {
   name: IconName;

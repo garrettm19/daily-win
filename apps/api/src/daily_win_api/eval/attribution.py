@@ -50,7 +50,4 @@ def original_safety_was_false_positive(
     original_hard_failures: list[str],
     current_safety_ok: bool,
 ) -> bool:
-    return (
-        "unsafe_content" in original_hard_failures
-        and current_safety_ok
-    )
+    return "unsafe_content" in original_hard_failures and current_safety_ok

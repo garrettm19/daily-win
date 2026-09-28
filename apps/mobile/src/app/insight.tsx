@@ -1,20 +1,21 @@
-import { useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import { ApiError } from '@/lib/api/client';
-import { generateDemoDailyWinSafely } from '@/lib/api/demo';
-import { parentMessage, type ApiErrorKind } from '@/lib/api/parentErrors';
+import {
+  academicResultLabel,
+  difficultyLabel,
+  persistenceLabel,
+  selfCorrectionLabel,
+} from '@/lib/competency';
+import { normalizeDisplayText } from '@/lib/displayNormalize';
+import { hasVisibleText } from '@/lib/productCopy';
 import { colors, space } from '@/theme';
 import { AppButton } from '@/ui/AppButton';
 import { AppText } from '@/ui/AppText';
 import { Card } from '@/ui/Card';
-import { ErrorCallout } from '@/ui/ErrorCallout';
 import { GeneratedText } from '@/ui/GeneratedText';
-import { Icon } from '@/ui/Icon';
+import { ResultMetric } from '@/ui/ResultMetric';
 import { Screen } from '@/ui/Screen';
-import { ScreenLoading } from '@/ui/ScreenLoading';
-import { SectionLabel } from '@/ui/SectionLabel';
 
 function firstString(value: string | string[] | undefined): string {
   if (Array.isArray(value)) {
@@ -32,121 +33,97 @@ export default function InsightScreen() {
     academic_observation?: string | string[];
     growth_observation?: string | string[];
     academic_area?: string | string[];
+    skill?: string | string[];
+    academic_result?: string | string[];
+    difficulty?: string | string[];
+    setback?: string | string[];
+    self_correction?: string | string[];
   }>();
   const observation = firstString(params.observation);
   const nextAdjustment = firstString(params.next_adjustment);
-  const nickname = firstString(params.nickname) || 'this child';
   const academicObservation = firstString(params.academic_observation);
-  const growthObservation = firstString(params.growth_observation) || observation;
+  const growthObservation = firstString(params.growth_observation);
   const academicArea = firstString(params.academic_area);
-  const [generating, setGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [errorCode, setErrorCode] = useState<string | null>(null);
-  const [errorKind, setErrorKind] = useState<ApiErrorKind | null>(null);
-  const generateLock = useRef(false);
+  const skill = firstString(params.skill) || academicArea;
+  const independence = academicResultLabel(firstString(params.academic_result));
+  const challenge = difficultyLabel(firstString(params.difficulty));
+  const persistence = persistenceLabel(firstString(params.setback));
+  const selfCorrected = selfCorrectionLabel(firstString(params.self_correction));
+  const showGrowth =
+    hasVisibleText(growthObservation) &&
+    growthObservation !== academicObservation &&
+    growthObservation !== observation;
 
   const goHome = () => {
     router.dismissTo('/');
   };
 
-  const handleGenerate = () => {
-    if (generateLock.current || generating) {
-      return;
-    }
-    generateLock.current = true;
-    setGenerating(true);
-    setError(null);
-    setErrorCode(null);
-    setErrorKind(null);
-    void generateDemoDailyWinSafely()
-      .then(() => {
-        if (router.canDismiss()) {
-          router.dismissTo('/');
-        }
-        router.push('/daily-win');
-      })
-      .catch((caught: unknown) => {
-        generateLock.current = false;
-        if (caught instanceof ApiError) {
-          setError(parentMessage('generate', caught.kind));
-          setErrorCode(caught.errorCode ?? null);
-          setErrorKind(caught.kind);
-          return;
-        }
-        setError(parentMessage('generate'));
-        setErrorKind('unavailable');
-      })
-      .finally(() => {
-        setGenerating(false);
-      });
-  };
-
   return (
     <Screen>
-      <View style={styles.success}>
-        <Icon name="checkmark-circle" size={28} color={colors.actionPrimary} />
-        <AppText variant="caption">The app listened.</AppText>
+      <AppText variant="caption">Session complete</AppText>
+      <AppText variant="screenTitle" style={styles.title}>
+        Result
+      </AppText>
+      {hasVisibleText(skill) ? (
+        <AppText variant="secondary">{skill}</AppText>
+      ) : null}
+
+      <View style={styles.metrics}>
+        <ResultMetric label="Independence" value={independence} />
+        <ResultMetric label="Challenge" value={challenge} />
+        <ResultMetric label="Self-correction" value={selfCorrected} />
+        <ResultMetric label="Persistence" value={persistence} />
       </View>
-      <SectionLabel>What we learned</SectionLabel>
-        {academicObservation ? (
-        <Card style={styles.block}>
-          {academicArea ? (
-            <AppText variant="caption">{academicArea}</AppText>
-          ) : null}
-          <GeneratedText variant="emphasized">{academicObservation}</GeneratedText>
-        </Card>
-      ) : null}
-      <Card style={styles.block}>
-        {academicObservation ? (
-          <AppText variant="caption">Persistence</AppText>
-        ) : null}
-        <GeneratedText variant="emphasized">
-          {growthObservation || 'The reflection was saved.'}
+
+      {hasVisibleText(academicObservation) ? (
+        <GeneratedText variant="body" style={styles.note}>
+          {academicObservation}
         </GeneratedText>
-      </Card>
-      <SectionLabel>What changes next</SectionLabel>
+      ) : hasVisibleText(observation) ? (
+        <GeneratedText variant="body" style={styles.note}>
+          {observation}
+        </GeneratedText>
+      ) : null}
+      {showGrowth ? (
+        <GeneratedText variant="body" style={styles.note}>
+          {growthObservation}
+        </GeneratedText>
+      ) : null}
+
       <Card tone="soft" style={styles.block}>
+        <AppText variant="sectionLabel">What changes next</AppText>
         <GeneratedText variant="emphasized">
-          {nextAdjustment || 'The next Daily Win can now be generated.'}
+          {hasVisibleText(nextAdjustment)
+            ? normalizeDisplayText(nextAdjustment)
+            : 'Same skill next time, adjusted from what you reported.'}
         </GeneratedText>
       </Card>
-      {generating ? (
-        <ScreenLoading
-          title={`Designing ${nickname}'s next Daily Win…`}
-          body="Using what you reported to make a modest adjustment."
-          supporting
-        />
-      ) : null}
-      {error ? (
-        <ErrorCallout message={error} errorCode={errorCode} errorKind={errorKind} />
-      ) : null}
-      <AppButton
-        label={
-          generating
-            ? `Designing ${nickname}'s next Daily Win…`
-            : error
-              ? 'Retry'
-              : `Generate ${nickname}'s next Daily Win`
-        }
-        accessibilityLabel={`Generate ${nickname}'s next Daily Win`}
-        disabled={generating}
-        loading={generating}
-        onPress={handleGenerate}
-      />
-      <AppButton label="Back to Home" variant="secondary" onPress={goHome} />
+      <AppText variant="secondary" style={styles.note}>
+        Next Win is preparing. You can close the app.
+      </AppText>
+      <AppButton label="Done" onPress={goHome} />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  success: {
+  title: {
+    marginTop: space.xs,
+  },
+  metrics: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: space.lg,
+    flexWrap: 'wrap',
+    marginTop: space.lg,
+    marginBottom: space.md,
   },
   block: {
+    marginTop: space.md,
+    marginBottom: space.lg,
+    gap: space.xs,
+  },
+  note: {
     marginTop: space.sm,
-    marginBottom: space.xl,
+    marginBottom: space.sm,
+    color: colors.textSecondary,
   },
 });

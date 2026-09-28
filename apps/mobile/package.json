@@ -47,7 +47,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "generate:typed-routes": "node ./scripts/generate-typed-routes.cjs",
-    "test": "node --experimental-strip-types --test src/lib/api/parentErrors.test.ts src/lib/api/apiBase.test.ts src/lib/api/advisoryHealth.test.ts src/lib/generateRecovery.test.ts src/lib/demoSession.test.ts src/lib/academicLoop.test.ts"
+        "test": "node --experimental-strip-types --test src/lib/api/parentErrors.test.ts src/lib/api/apiBase.test.ts src/lib/api/advisoryHealth.test.ts src/lib/generateRecovery.test.ts src/lib/demoSession.test.ts src/lib/academicLoop.test.ts src/lib/homeState.test.ts src/lib/firstWin.test.ts src/lib/productCopy.test.ts src/lib/pilotView.test.ts src/lib/reflectionDraft.test.ts src/lib/displayNormalize.test.ts src/lib/homePresentation.test.ts src/lib/competency.test.ts src/lib/sessionSteps.test.ts src/lib/parentCopy.scan.test.ts"
   },
   "private": true
 }

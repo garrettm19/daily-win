@@ -9,21 +9,33 @@ import {
   type ApiErrorKind,
   parentMessage,
 } from '@/lib/api/parentErrors';
-import { homeWinPhase } from '@/lib/homeState';
+import { changedTodayCopy } from '@/lib/academicLoop';
+import {
+  academicResultLabel,
+  independencePoints,
+  nextMoveCopy,
+} from '@/lib/competency';
+import { homePresentationPhase, onePrimaryCtaLabel } from '@/lib/homePresentation';
+import { firstWinFailed, generationStageCopy, homeWinPhase } from '@/lib/homeState';
+import { formatFriendlyDate } from '@/lib/productCopy';
 import { clearReflectionDraft } from '@/lib/reflectionDraft';
 import type {
   DemoChildProfile,
   DemoDailyWin,
+  DemoProgress,
+  NextWinState,
 } from '@/lib/api/types';
 import { colors, space } from '@/theme';
 import { AppButton } from '@/ui/AppButton';
 import { AppText } from '@/ui/AppText';
+import { BrandMark } from '@/ui/BrandMark';
 import { Card } from '@/ui/Card';
 import { DemoControls } from '@/ui/DemoControls';
 import { ErrorCallout } from '@/ui/ErrorCallout';
 import { Icon } from '@/ui/Icon';
 import { Screen } from '@/ui/Screen';
 import { ScreenLoading } from '@/ui/ScreenLoading';
+import { SkillCard } from '@/ui/SkillCard';
 import { StatusBadge } from '@/ui/StatusBadge';
 import { TextButton } from '@/ui/TextButton';
 
@@ -34,6 +46,9 @@ export default function Index() {
     session,
     profile,
     dailyWin,
+    nextWin,
+    progress,
+    pendingReady,
     error,
     errorKind,
     errorCode,
@@ -86,7 +101,7 @@ export default function Index() {
   };
 
   const openDailyWin = () => {
-    router.push('/daily-win');
+    router.push('/daily-win?begin=1');
   };
 
   const handleActivityResetSucceeded = () => {
@@ -125,7 +140,7 @@ export default function Index() {
     setHayesErrorKind(null);
     void setupHayesProfile()
       .then(() => {
-        refresh();
+        router.replace('/guide');
       })
       .catch((caught: unknown) => {
         hayesLock.current = false;
@@ -159,10 +174,14 @@ export default function Index() {
     void generateDemoDailyWinSafely()
       .then((created) => {
         rememberDailyWin(created);
-        router.push('/daily-win');
+        router.push('/daily-win?begin=1');
       })
       .catch((caught: unknown) => {
         generateLock.current = false;
+        if (caught instanceof ApiError && caught.errorCode === 'generation_in_progress') {
+          refresh();
+          return;
+        }
         if (caught instanceof ApiError) {
           setGenerateError(parentMessage('generate', caught.kind));
           setGenerateErrorCode(caught.errorCode ?? null);
@@ -185,7 +204,7 @@ export default function Index() {
       {loading && !session ? (
         <>
           <BrandMark />
-          <ScreenLoading title="Loading Daily Win" />
+          <ScreenLoading title="Daily Win" />
         </>
       ) : null}
       {!loading && error && !session ? (
@@ -226,6 +245,9 @@ export default function Index() {
         <ProfileHome
           profile={profile}
           dailyWin={dailyWin}
+          nextWin={nextWin}
+          progress={progress}
+          pendingReady={pendingReady}
           generating={generating}
           generateError={generateError}
           generateErrorCode={generateErrorCode}
@@ -242,15 +264,6 @@ export default function Index() {
         />
       ) : null}
     </Screen>
-  );
-}
-
-function BrandMark() {
-  return (
-    <View style={styles.brandRow}>
-      <Icon name="sparkles" size={16} color={colors.highlight} />
-      <AppText variant="sectionLabel">Daily Win</AppText>
-    </View>
   );
 }
 
@@ -285,14 +298,18 @@ function FirstRun({
 }) {
   return (
     <>
+      <BrandMark />
       <AppText variant="display" style={styles.heroTitle}>
         Daily Win
       </AppText>
       <AppText variant="body" style={styles.heroBody}>
-        One personalized thing to do with your child today.
+        20 minutes. One challenge. Know exactly how to coach it.
       </AppText>
       <AppText variant="secondary" style={styles.heroSupport}>
-        It learns from what happens and makes the next Win better.
+        Built for parents who want to be more intentional with 20 minutes.
+      </AppText>
+      <AppText variant="caption" style={styles.heroCaption}>
+        Daily Win gives you the plan. You bring the relationship.
       </AppText>
       {loadError ? (
         <ErrorCallout
@@ -306,13 +323,13 @@ function FirstRun({
         <ErrorCallout message={error} errorCode={errorCode} errorKind={errorKind} />
       ) : null}
       <AppButton
-        label="Try the Hayes demo"
+        label="Start with Hayes"
         onPress={onHayes}
         loading={loading}
         disabled={loading}
       />
       <AppButton
-        label="Create a demo profile"
+        label="Create a profile"
         variant="secondary"
         onPress={onCustom}
         disabled={loading}
@@ -332,6 +349,9 @@ function FirstRun({
 function ProfileHome({
   profile,
   dailyWin,
+  nextWin,
+  progress,
+  pendingReady,
   generating,
   generateError,
   generateErrorCode,
@@ -348,6 +368,9 @@ function ProfileHome({
 }: {
   profile: DemoChildProfile;
   dailyWin: DemoDailyWin | null;
+  nextWin: NextWinState | null;
+  progress: DemoProgress | null;
+  pendingReady: boolean;
   generating: boolean;
   generateError: string | null;
   generateErrorCode: string | null;
@@ -363,7 +386,34 @@ function ProfileHome({
   onRestartSucceeded: () => void;
 }) {
   const router = useRouter();
-  const focusGoal = profile.goals[0];
+  const phase = homePresentationPhase({
+    presentedWin: dailyWin,
+    latestWin: nextWin?.daily_win ?? null,
+    preparationStatus: nextWin?.preparation_status,
+    pendingReady,
+  });
+  const skills = (progress?.academic_skills ?? []).slice(0, 3);
+  const snapshot = dailyWin?.has_feedback ? dailyWin.result_snapshot : null;
+  const latestResult = snapshot
+    ? academicResultLabel(snapshot.academic_result) ||
+      progress?.academic_skills?.[0]?.recent_evidence
+    : progress?.academic_skills?.[0]?.recent_evidence;
+  const nextMove = nextMoveCopy({
+    oneThing: dailyWin?.one_thing_to_improve,
+    changedToday: dailyWin ? changedTodayCopy(dailyWin) : null,
+    currentAdjustment: progress?.growth_skills?.[0]?.current_adjustment,
+  });
+  const dateLabel = formatFriendlyDate(new Date().toISOString());
+  const momentum =
+    phase === 'preparing_first' || phase === 'reflected_preparing_next'
+      ? 'Preparing next'
+      : phase === 'current_unreflected' || phase === 'next_ready'
+        ? 'Ready today'
+        : phase === 'next_ready_pending_presentation'
+          ? 'Last session saved'
+          : phase === 'prep_failed'
+            ? 'Needs a retry'
+            : 'Let’s go';
 
   return (
     <>
@@ -372,13 +422,11 @@ function ProfileHome({
         {profile.child.nickname}
       </AppText>
       <AppText variant="secondary">
-        Age {profile.baseline.age_years} • Grade {formatGrade(profile.baseline.grade)}
+        {dateLabel} · Grade {formatGrade(profile.baseline.grade)}
       </AppText>
-      {focusGoal ? (
-        <AppText variant="caption" style={styles.focusLine}>
-          Today’s focus: {focusGoal.display_name}
-        </AppText>
-      ) : null}
+      <AppText variant="caption" style={styles.momentum}>
+        {momentum}
+      </AppText>
       {loadError ? (
         <ErrorCallout
           message={loadError}
@@ -389,17 +437,16 @@ function ProfileHome({
       ) : null}
 
       <Card tone="highlight" style={styles.winCard}>
-        <AppText variant="sectionLabel">
-          {dailyWin ? 'Today’s Win' : 'Ready for today’s Win?'}
-        </AppText>
+        <AppText variant="sectionLabel">Today</AppText>
         {resetNotice ? (
           <AppText variant="caption" style={styles.notice}>
             {resetNotice}
           </AppText>
         ) : null}
         <HomeWinCard
-          profile={profile}
           dailyWin={dailyWin}
+          nextWin={nextWin}
+          pendingReady={pendingReady}
           generating={generating}
           generateError={generateError}
           generateErrorCode={generateErrorCode}
@@ -409,21 +456,51 @@ function ProfileHome({
         />
       </Card>
 
+      {skills.length > 0 ? (
+        <View style={styles.section}>
+          <AppText variant="sectionLabel">Progress</AppText>
+          <ScrollSkills skills={skills} nextMove={nextMove} />
+        </View>
+      ) : null}
+
+      {latestResult ? (
+        <View style={styles.section}>
+          <AppText variant="sectionLabel">Latest result</AppText>
+          <AppText variant="cardTitle" style={styles.winTitle}>
+            {progress?.academic_skills?.[0]?.skill_name ?? dailyWin?.primary_skill_display_name}
+          </AppText>
+          <AppText variant="secondary">{latestResult}</AppText>
+        </View>
+      ) : null}
+
+      {nextMove && (phase === 'current_unreflected' || phase === 'next_ready') ? (
+        <View style={styles.section}>
+          <AppText variant="sectionLabel">Next move</AppText>
+          <AppText variant="bodyEmphasized">{nextMove}</AppText>
+        </View>
+      ) : null}
+
       <View style={styles.navRow}>
-        <NavLink
-          label="Profile"
-          icon="person-outline"
-          onPress={() => router.push('/profile')}
-        />
         <NavLink
           label="Progress"
           icon="leaf-outline"
           onPress={() => router.push('/progress')}
         />
         <NavLink
+          label="Week"
+          icon="calendar-outline"
+          onPress={() => router.push('/weekly-report')}
+          accessibilityLabel="This week"
+        />
+        <NavLink
           label="History"
           icon="time-outline"
           onPress={() => router.push('/history')}
+        />
+        <NavLink
+          label="Profile"
+          icon="person-outline"
+          onPress={() => router.push('/profile')}
         />
       </View>
 
@@ -437,9 +514,31 @@ function ProfileHome({
   );
 }
 
+function ScrollSkills({
+  skills,
+  nextMove,
+}: {
+  skills: NonNullable<DemoProgress['academic_skills']>;
+  nextMove: string | null;
+}) {
+  return (
+    <View style={styles.skillRow}>
+      {skills.map((skill, index) => (
+        <SkillCard
+          key={`${skill.domain_label}-${skill.skill_name}`}
+          skill={skill}
+          points={independencePoints(skill)}
+          nextMove={index === 0 ? nextMove : null}
+        />
+      ))}
+    </View>
+  );
+}
+
 function HomeWinCard({
-  profile,
   dailyWin,
+  nextWin,
+  pendingReady,
   generating,
   generateError,
   generateErrorCode,
@@ -447,8 +546,9 @@ function HomeWinCard({
   onGenerate,
   onView,
 }: {
-  profile: DemoChildProfile;
   dailyWin: DemoDailyWin | null;
+  nextWin: NextWinState | null;
+  pendingReady: boolean;
   generating: boolean;
   generateError: string | null;
   generateErrorCode: string | null;
@@ -456,27 +556,53 @@ function HomeWinCard({
   onGenerate: () => void;
   onView: () => void;
 }) {
-  const phase = homeWinPhase(dailyWin);
-  const nickname = profile.child.nickname;
+  const phase = homeWinPhase(
+    dailyWin,
+    pendingReady ? (dailyWin ? 'ready' : nextWin?.preparation_status) : nextWin?.preparation_status,
+  );
+  const ctaPhase = homePresentationPhase({
+    presentedWin: dailyWin,
+    latestWin: nextWin?.daily_win ?? null,
+    preparationStatus: nextWin?.preparation_status,
+    pendingReady,
+  });
+  const primary = onePrimaryCtaLabel(ctaPhase);
 
-  if (generating) {
+  if (generating || phase === 'preparing') {
+    const focus = nextWin?.focus_preview;
     return (
-      <ScreenLoading
-        title={`Designing ${nickname}'s Daily Win…`}
-        body="Creating one short activity for you to do together."
-        supporting
-      />
+      <>
+        {focus ? (
+          <AppText variant="cardTitle" style={styles.winTitle}>
+            {focus}
+          </AppText>
+        ) : null}
+        <AppText variant={focus ? 'secondary' : 'cardTitle'} style={styles.winBody}>
+          {generationStageCopy()}
+        </AppText>
+        <AppText variant="caption">You can leave. It will be here when you come back.</AppText>
+      </>
     );
   }
 
-  if (phase === 'none') {
+  if (phase === 'failed') {
+    const invalidated = nextWin?.preparation_status === 'invalidated';
+    const firstFail = firstWinFailed(nextWin, dailyWin !== null);
     return (
       <>
         <AppText variant="cardTitle" style={styles.winTitle}>
-          Ready for today’s Win?
+          {invalidated
+            ? 'Rebuilding today’s plan'
+            : firstFail
+              ? "Couldn't prepare today's Win."
+              : 'Today’s Win is not ready yet'}
         </AppText>
         <AppText variant="secondary" style={styles.winBody}>
-          One short activity designed from what you reported.
+          {invalidated
+            ? 'Your profile update is saved. Daily Win is making a new plan from it.'
+            : firstFail
+              ? 'Try again when you are ready.'
+              : 'Your last reflection was saved. Create today’s Win when you are ready.'}
         </AppText>
         {generateError ? (
           <ErrorCallout
@@ -485,7 +611,28 @@ function HomeWinCard({
             errorKind={generateErrorKind}
           />
         ) : null}
-        <AppButton label="Generate today’s Daily Win" onPress={onGenerate} />
+        <AppButton label={primary ?? 'Try again'} onPress={onGenerate} />
+      </>
+    );
+  }
+
+  if (phase === 'none') {
+    return (
+      <>
+        <AppText variant="cardTitle" style={styles.winTitle}>
+          {nextWin?.focus_preview ?? 'Ready for today’s Win?'}
+        </AppText>
+        <AppText variant="secondary" style={styles.winBody}>
+          One short challenge. You’ll know the job before you start.
+        </AppText>
+        {generateError ? (
+          <ErrorCallout
+            message={generateError}
+            errorCode={generateErrorCode}
+            errorKind={generateErrorKind}
+          />
+        ) : null}
+        <AppButton label={primary ?? "Create today's Win"} onPress={onGenerate} />
       </>
     );
   }
@@ -501,11 +648,9 @@ function HomeWinCard({
           {dailyWin.title}
         </AppText>
         <AppText variant="secondary" style={styles.winBody}>
-          {dailyWin.primary_skill_display_name} • About {dailyWin.duration_minutes}{' '}
-          minutes
+          {dailyWin.primary_skill_display_name} · ~{dailyWin.duration_minutes} min
         </AppText>
-        <StatusBadge label="Reflection pending" tone="pending" />
-        <AppButton label="View Daily Win" onPress={onView} />
+        <AppButton label={primary ?? 'Start Daily Win'} onPress={onView} />
       </>
     );
   }
@@ -515,19 +660,13 @@ function HomeWinCard({
       <AppText variant="cardTitle" style={styles.winTitle}>
         {dailyWin.title}
       </AppText>
-      <StatusBadge label="Completed" tone="win" />
-      {generateError ? (
-        <ErrorCallout
-          message={generateError}
-          errorCode={generateErrorCode}
-          errorKind={generateErrorKind}
-        />
-      ) : null}
-      <AppButton
-        label={`Generate ${nickname}'s next Daily Win`}
-        onPress={onGenerate}
-      />
-      <TextButton label="View completed Win" onPress={onView} />
+      <StatusBadge label="Saved" tone="win" />
+      <AppText variant="secondary" style={styles.winBody}>
+        {pendingReady
+          ? 'Next Win is ready when you come back to this screen.'
+          : 'Saved. Next Win is preparing. You can close the app.'}
+      </AppText>
+      <TextButton label="View last Win" onPress={onView} />
     </>
   );
 }
@@ -536,15 +675,17 @@ function NavLink({
   label,
   icon,
   onPress,
+  accessibilityLabel,
 }: {
   label: string;
-  icon: 'person-outline' | 'leaf-outline' | 'time-outline';
+  icon: 'person-outline' | 'leaf-outline' | 'time-outline' | 'calendar-outline';
   onPress: () => void;
+  accessibilityLabel?: string;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
       onPress={onPress}
       style={({ pressed }) => [styles.navLink, pressed && styles.navPressed]}>
       <Icon name={icon} size={18} color={colors.actionPrimary} />
@@ -563,11 +704,6 @@ function formatGrade(grade: string): string {
 }
 
 const styles = StyleSheet.create({
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
   heroTitle: {
     marginTop: space.md,
   },
@@ -577,20 +713,38 @@ const styles = StyleSheet.create({
   heroSupport: {
     marginTop: space.xs,
   },
+  heroCaption: {
+    marginTop: space.sm,
+    marginBottom: space.sm,
+  },
   demoCopy: {
     marginTop: space.lg,
   },
   nickname: {
     marginTop: space.sm,
   },
-  focusLine: {
-    marginTop: space.xs,
+  momentum: {
+    marginTop: space.xxs,
+    marginBottom: space.sm,
   },
   winCard: {
     marginTop: space.xl,
   },
+  section: {
+    marginTop: space.xl,
+    gap: space.xs,
+  },
+  skillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space.sm,
+    marginTop: space.sm,
+  },
   winTitle: {
     marginTop: space.sm,
+  },
+  jobLabel: {
+    marginTop: space.md,
   },
   winBody: {
     marginTop: space.xs,

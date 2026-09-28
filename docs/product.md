@@ -114,3 +114,20 @@ V0.1 is also **not** trying to prove:
 - social features, school integrations, or marketplace content
 - autonomous child accounts or child-operated chat
 - scale infrastructure beyond a modular monolith and PostgreSQL
+
+## V0.4.0 Guide Mode
+
+The parent becomes the Guide. Daily Win owns learning intelligence (scheduler, planner, CoachProtocol, weekly synthesis). See `docs/guide-mode.md`, `docs/coach-protocol.md`, and `docs/weekly-learning-loop.md`.
+
+## V0.4.1 returning-parent latency
+
+A returning parent should open Home to a READY Daily Win. Reflection must not wait on Terra. The next Win is prepared after reflection, off the UI path. See `docs/generation-latency.md`.
+
+## V0.4.2 first-Win latency
+
+The first Daily Win starts as soon as profile setup is committed. The parent can skip a short Guide intro while Terra runs. Home shows today's focus and the coach card if the Win is still generating. Do not pad onboarding to hide model time. Terra reasoning stays medium. Background prep uses the Standard service tier; only an explicit parent-waiting fallback may request Fast mode. See `docs/first-win-latency.md`.
+
+## V0.4.3 product polish
+
+The V0.4.x loop should feel like one 20-minute coaching product. Parent UI uses a frozen vocabulary (Daily Win, Today’s focus, Your job today, What to check, Reflection, What we learned, What changes next, Progress, Weekly Coach Report). Guide Mode stays four short skippable screens. Educational policy, curriculum, scheduler, and Terra are unchanged. See `docs/product-polish-audit.md` and `docs/product-polish-qa.md`.
+

@@ -11,6 +11,12 @@ from typing import Any
 
 PRICING_LAST_VERIFIED = date(2026, 9, 19)
 
+# Fast mode (request `fast` / returned `priority`) is 2x Standard for Terra.
+# Official Fast rates: $4 / $24 per 1M vs Standard $2 / $12. Cached input 2x.
+FAST_MODE_MULTIPLIER = 2.0
+FAST_MODE_TIERS = frozenset({"fast", "priority"})
+FAST_MODE_PRICING_VERIFIED = date(2026, 9, 21)
+
 
 @dataclass(frozen=True)
 class ModelPrice:
@@ -29,7 +35,10 @@ OPENAI_MODEL_PRICES: dict[str, ModelPrice] = {
         input_usd_per_million=2.00,
         output_usd_per_million=12.00,
         last_verified_date=PRICING_LAST_VERIFIED,
-        notes="Official OpenAI model page as of 2026-09-19.",
+        notes=(
+            "Standard $2/$12 as of 2026-09-19. Fast mode 2x ($4/$24) "
+            "as of 2026-09-21 OpenAI Fast mode / pricing pages."
+        ),
     ),
     "gpt-5.6-luna": ModelPrice(
         model="gpt-5.6-luna",
@@ -61,20 +70,37 @@ def price_for(model: str) -> ModelPrice | None:
 
 
 def estimate_cost_usd(
-    model: str, input_tokens: int | None, output_tokens: int | None
+    model: str,
+    input_tokens: int | None,
+    output_tokens: int | None,
+    *,
+    service_tier: str | None = None,
 ) -> float | None:
-    parts = estimate_cost_parts(model, input_tokens, output_tokens)
+    parts = estimate_cost_parts(
+        model, input_tokens, output_tokens, service_tier=service_tier
+    )
     return None if parts is None else parts.total_usd
 
 
 def estimate_cost_parts(
-    model: str, input_tokens: int | None, output_tokens: int | None
+    model: str,
+    input_tokens: int | None,
+    output_tokens: int | None,
+    *,
+    service_tier: str | None = None,
 ) -> CostEstimate | None:
     price = price_for(model)
     if price is None or input_tokens is None or output_tokens is None:
         return None
-    input_usd = (input_tokens / 1_000_000) * price.input_usd_per_million
-    output_usd = (output_tokens / 1_000_000) * price.output_usd_per_million
+    multiplier = (
+        FAST_MODE_MULTIPLIER if service_tier in FAST_MODE_TIERS else 1.0
+    )
+    input_usd = (
+        (input_tokens / 1_000_000) * price.input_usd_per_million * multiplier
+    )
+    output_usd = (
+        (output_tokens / 1_000_000) * price.output_usd_per_million * multiplier
+    )
     total = input_usd + output_usd
     share = 0.0 if total == 0 else output_usd / total
     return CostEstimate(

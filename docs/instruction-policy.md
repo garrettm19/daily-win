@@ -1,8 +1,8 @@
 # Daily Win — Instruction policy
 
-Policy version: `instruction_policy_v2`. Historical plans remain `instruction_policy_v1`.
+Current planner: `instruction_policy_v4`. Frozen scheduler-less fixtures: `instruction_policy_v3`. Historical plans may also be `instruction_policy_v1` or `instruction_policy_v2`. Scheduler: `instruction_scheduler_v1` (see [instruction-scheduling.md](instruction-scheduling.md)). Placement: `placement_policy_v1` (see [placement-calibration.md](placement-calibration.md)).
 
-The InstructionPlanner is application-owned. It runs **before** ModelGateway. Prompt v4 treats its output as authoritative.
+The InstructionPlanner is application-owned. It runs **before** ModelGateway. Prompt v5 treats its output as authoritative. PlacementPolicy chooses the diagnostic entry when evidence is sparse; the planner does not hide age heuristics inside the prerequisite walk.
 
 ## Inputs
 
@@ -31,34 +31,30 @@ Persisted on `instruction_plans` (queryable columns + versioned JSONB `plan`):
 - `engagement_theme_constraints` (up to two interests)
 - `recent_themes_to_avoid`
 - `policy_version`, `academic_band`
+- `placement_policy_version`, `placement_entry_label`, `placement_why`, `presentation_constraint`
 
 No chain-of-thought.
 
 ## Age / grade policy
 
-Evidence and prerequisites determine readiness. Age/grade does **not** fabricate mastery and does **not** skip foundational skills.
+Age/grade is a **starting prior**, not mastery. It does not write learner bands and does not permanently skip prerequisites.
 
-Age/grade **does** influence:
+`PlacementPolicy` (`placement_policy_v1`) selects an age/grade-appropriate diagnostic entry when the selected strand has no usable Daily Win evidence. Unknown (`not_observed`) is not treated as weakness. Observed weakness still steps down one prerequisite and still blocks advancement.
 
-- wording and context (renderer)
-- expected pace of the first check
-- whether a foundational academic skill with **no evidence** uses a brief diagnostic probe instead of extended introduce/practice
-- activity presentation
+Age/grade also influences wording/context and whether an older child on a foundation skill gets an `age_respectful_foundation` renderer contract.
 
-Rule: if the selected academic skill is `not_observed` and the child is age **8 or older**, mode is `diagnostic` (medium scaffold, similar difficulty, reason `diagnostic_check`). Younger children still get `introduce`. Diagnostic success is ordinary evidence. It is not inferred from age.
+Sparse academic placement uses `diagnostic` from age 7 and `introduce` for younger children, always at the grade-band entry skill rather than the earliest unknown prerequisite. Diagnostic success is ordinary evidence.
 
 ## Selection algorithm (deterministic)
 
-1. Take the highest-priority **academic** goal; otherwise the first goal.
-2. Expand strand goals to ordered child skills that are generation-supported. Age does not remove candidates.
-3. Walk candidates in progression order:
-   - Walk missing prerequisites **recursively**. A prerequisite is sufficiently evidenced only if band is `demonstrated` or `retained`.
-   - If a prerequisite is missing, select that earlier skill. Mode uses the same `_mode_for` rules (remediation, diagnostic, introduce, or practice).
-   - If `needs_remediation` is set, **remediation takes precedence** over the generic emerging/developing practice branch.
-   - If the skill is due for review (≥ 14 days since last practice while demonstrated/retained), **review**.
-   - If band is `not_observed` → `introduce` (age < 8) or `diagnostic` (age ≥ 8).
-   - If band is `emerging` or `developing` (and not remediating) → **practice**.
-4. If every candidate is beyond those gates, stay on the last skill (`progression_next`).
+`instruction_policy_v4` receives a `ScheduledFocus` from `instruction_scheduler_v1`. The planner no longer always starts at parent academic #1. Frozen `instruction_policy_v3` still starts at the highest-priority academic goal.
+
+1. Take the scheduler's selected academic goal (`v4`) or the highest-priority **academic** goal (`v3`); otherwise the first goal.
+2. `PlacementPolicy` expands the strand and, if evidence is sparse, selects the highest grade-band entry skill for the child's age.
+3. Unknown prerequisites do **not** recurse to the earliest leaf. Observed-weak prerequisites still gate.
+4. If a later skill's diagnostic was weak (`emerging`, no independent success), step down one academic prerequisite (`foundation_review`).
+5. Otherwise walk candidates in progression order for review, practice, introduce, or diagnostic using existing band rules.
+6. Supporting academic skills are omitted during sparse diagnostics so a later skill cannot ride along.
 
 Supporting skills must pass the same prerequisite gate. A later skill that could not be primary cannot be named as supporting. Growth/life overlays remain allowed as supporting.
 
@@ -87,7 +83,7 @@ primary_skill: writing.sentences.complete_sentence
 reason_codes: [parent_priority, age_grade_appropriate, insufficient_independent_evidence]
 instruction_mode: introduce
 scaffold: three_step_visual
-policy_version: instruction_policy_v2
+policy_version: instruction_policy_v3  # frozen fixture example; current plans are v4
 prerequisite_rationale: Prerequisites are sufficiently evidenced or none apply.
 ```
 
@@ -110,4 +106,4 @@ Instructional personalization always wins. A soccer theme does not change the ta
 
 ## Evaluation
 
-Deterministic golden cases and why-not tests live in `apps/api/src/daily_win_api/eval/planner_cases.py`. Policy version `instruction_policy_v2` is asserted on every case. See [planner-evaluation.md](planner-evaluation.md). Changing selection order, gates, or scaffold/difficulty mapping requires a new policy version, not a silent rewrite of stored plans.
+Deterministic golden cases and why-not tests live in `apps/api/src/daily_win_api/eval/planner_cases.py`. Those fixtures evaluate frozen `plan_instruction_v3()` so `instruction_policy_v3` behavior does not silently change. Current generation uses `instruction_policy_v4` after `instruction_scheduler_v1`. Placement version `placement_policy_v1` is asserted on every case. See [planner-evaluation.md](planner-evaluation.md), [placement-calibration.md](placement-calibration.md), and [instruction-scheduling.md](instruction-scheduling.md). Changing selection order, gates, or scaffold/difficulty mapping requires a new policy version, not a silent rewrite of stored plans.

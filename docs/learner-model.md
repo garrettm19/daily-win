@@ -64,7 +64,7 @@ Do not turn arbitrary parent free text into MEASUREMENT.
 
 ### E. Instruction decision
 
-`InstructionPlanner` (`instruction_policy_v2`) produces an `InstructionPlan` **before** generation. Persisted as `instruction_plans` with reason codes. The LLM must not select the fundamental instructional objective.
+`InstructionScheduler` (`instruction_scheduler_v1`) chooses today's academic goal. `InstructionPlanner` (`instruction_policy_v4`) produces an `InstructionPlan` **before** generation. `PlacementPolicy` (`placement_policy_v1`) chooses the diagnostic entry when evidence is sparse. Persisted as `instruction_plans` with reason codes. The LLM must not select the fundamental instructional objective.
 
 ### F. Generated experience
 

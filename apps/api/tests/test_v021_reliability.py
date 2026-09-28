@@ -23,10 +23,6 @@ def _development_app(db_session, gateway=None):
     return application
 
 
-def _win_count(session) -> int:
-    return session.scalar(select(func.count()).select_from(DailyWin)) or 0
-
-
 def test_latest_win_is_discoverable_after_generate(demo_db) -> None:
     application = _development_app(demo_db, FakeModelGateway())
     http = DemoClient(application)

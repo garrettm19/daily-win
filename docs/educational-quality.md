@@ -10,8 +10,10 @@ Related: [planner-evaluation.md](planner-evaluation.md), [curriculum.md](curricu
 
 | Artifact | Current id | Owner |
 | --- | --- | --- |
-| Skill graph / standards mapping | `curriculum_v1` | `domains/learning/taxonomy.py`, `prerequisites.py`, `standards.py` |
-| Planner policy | `instruction_policy_v2` | `domains/learning/planner.py` |
+| Skill graph / standards mapping | `curriculum_v2` | `domains/learning/taxonomy.py`, `prerequisites.py`, `standards.py` |
+| Planner policy | `instruction_policy_v4` (frozen fixtures: `v3`) | `domains/learning/planner.py` |
+| Instruction scheduler | `instruction_scheduler_v1` | `domains/learning/scheduler.py` |
+| Placement policy | `placement_policy_v1` | `domains/learning/placement.py` |
 | Academic projector | `academic_projector_v1` | `domains/learning/academic.py` |
 | Assessment probe catalog | `assessment_probe_v2` | `domains/learning/probes.py` |
 | Prompt renderer | `daily_win_generator_v5` | immutable v1–v4; current renderer v5 |
@@ -89,7 +91,7 @@ Rejected:
 
 - compare → halves/fourths — comparison of quantities is not the same competency as identifying equal shares of a whole.
 
-Age does **not** skip candidates in `instruction_policy_v2`. A 9-year-old with a new addition goal and no counting evidence gets a **diagnostic check of counting**, not a skip to later addition and not a fabricated mastery band.
+Age/grade is a starting prior in `placement_policy_v1`. A 9-year-old with a new addition goal and no evidence gets a **grade-band diagnostic of addition stories**, not a walk to counting and not a fabricated mastery band. See [placement-calibration.md](placement-calibration.md).
 
 ## Assessment validity
 
