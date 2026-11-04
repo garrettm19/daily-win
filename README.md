@@ -1,5 +1,7 @@
 # Daily Win
 
+[![CI](https://github.com/garrettm19/daily-win/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/garrettm19/daily-win/actions/workflows/ci.yml)
+
 Daily Win is a parent-operated app that helps parents intentionally develop their children through short personalized activities. AI is a copilot for the parent: it proposes a Daily Win, the parent and child complete it together offline, and parent feedback updates what the system understands about the child so the next activity adapts.
 
 It is not a child chatbot, an AI tutor that replaces the parent, or a product where the child is simply handed a tablet.
