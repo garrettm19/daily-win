@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 
 from daily_win_api.ai.delivery import (
@@ -192,6 +193,10 @@ def test_expanded_blind_review_hides_effort_identity() -> None:
         / "eval-results"
         / f"{EXISTING_LIVE_STEM}.json"
     )
+    if not source.exists():
+        # eval-results/ is gitignored: live eval artifacts exist only on
+        # machines that ran the live evaluation, never in a fresh checkout.
+        pytest.skip("live eval artifact not present (eval-results/ is gitignored)")
     review = expand_blind_review_from_artifact(source).read_text(encoding="utf-8")
     assert "### Output A" in review
     assert "### Output B" in review
