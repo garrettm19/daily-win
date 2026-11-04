@@ -146,6 +146,9 @@ def test_provider_failure_does_not_persist_instruction_plan(demo_db) -> None:
 def test_projector_failure_rolls_back_feedback(demo_db, monkeypatch) -> None:
     generated = generate_demo_daily_win(demo_db, FakeModelGateway())
     child = get_demo_child(demo_db)
+    # Capture the id now: the rollback below also undoes the demo seed made in
+    # this test transaction, which expires the Child instance.
+    child_id = child.id
     win = demo_db.get(DailyWin, generated.id)
 
     def boom(*_args, **_kwargs):
@@ -158,8 +161,8 @@ def test_projector_failure_rolls_back_feedback(demo_db, monkeypatch) -> None:
     with pytest.raises(RuntimeError):
         submit_demo_feedback(demo_db, win.id, FEEDBACK)
     demo_db.rollback()
-    assert _count(demo_db, DailyWinFeedback, child.id) == 0
-    assert _count(demo_db, LearningEvent, child.id) == 0
+    assert _count(demo_db, DailyWinFeedback, child_id) == 0
+    assert _count(demo_db, LearningEvent, child_id) == 0
 
 
 def test_reset_clears_v03_lineage_and_keeps_profile(demo_db) -> None:
